@@ -1,94 +1,141 @@
-import { useEffect, useRef, useState } from "react"
+import { memo, useEffect, useMemo, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
+import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeRaw from "rehype-raw"
 import rehypeSanitize from "rehype-sanitize"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
+import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism"
 import mermaid from "mermaid"
 import { Link, useLocation } from "react-router-dom"
+import { IconCopy } from "@tabler/icons-react"
+import { toast } from "sonner"
 import "@/utils/markdown.css"
 import { cn } from "@/lib/utils"
-
-// 动态导入 gray-matter 和 Buffer
-let matter: any = null
-let Buffer: any = null
-
-async function initGrayMatter() {
-  if (matter && Buffer) return
-  
-  try {
-    const [{ default: matterModule }, { Buffer: BufferModule }] = await Promise.all([
-      import("gray-matter"),
-      import("buffer")
-    ])
-    matter = matterModule
-    Buffer = BufferModule
-    
-    // 设置全局 Buffer
-    if (typeof window !== 'undefined') {
-      (window as any).Buffer = Buffer
-    }
-    if (typeof globalThis !== 'undefined') {
-      (globalThis as any).Buffer = Buffer
-    }
-  } catch (err) {
-    console.error("Failed to load gray-matter:", err)
-  }
-}
+import { useTheme } from "@/components/theme-provider"
 
 // 初始化 mermaid 配置
 mermaid.initialize({
   startOnLoad: false,
   theme: "default",
-  securityLevel: "loose",
+  securityLevel: "strict",
   suppressErrorRendering: true,
 })
 
 interface MermaidProps {
   chart: string
+  isDark: boolean
 }
 
-function Mermaid({ chart }: MermaidProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+const Mermaid = memo(function Mermaid({ chart, isDark }: MermaidProps) {
   const [svg, setSvg] = useState<string>("")
-  const [error, setError] = useState<string | null>(null)
+  const [hasError, setHasError] = useState(false)
+  const renderVersionRef = useRef(0)
 
   useEffect(() => {
+    const currentRenderVersion = ++renderVersionRef.current
+
     const renderChart = async () => {
-      if (!containerRef.current) return
-      
       try {
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: isDark ? "dark" : "default",
+          securityLevel: "loose",
+          suppressErrorRendering: true,
+        })
         // 使用唯一 ID 避免冲突
         const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`
         const { svg } = await mermaid.render(id, chart)
+        if (renderVersionRef.current !== currentRenderVersion) return
         setSvg(svg)
-        setError(null)
+        setHasError(false)
       } catch (err) {
+        if (renderVersionRef.current !== currentRenderVersion) return
         console.error("Mermaid render error:", err)
-        setError(err instanceof Error ? err.message : "Failed to render diagram")
+        setSvg("")
+        setHasError(true)
       }
     }
 
     renderChart()
-  }, [chart])
+  }, [chart, isDark])
 
-  if (error) {
+  if (hasError) {
     return (
-      <div className="p-4 border border-red-300 bg-red-50 rounded-md text-red-700">
-        <p className="font-semibold">Mermaid 渲染错误</p>
-        <pre className="text-sm mt-2 whitespace-pre-wrap">{error}</pre>
-        <pre className="text-sm mt-2 p-2 bg-red-100 rounded overflow-x-auto">{chart}</pre>
-      </div>
+      <CodeBlock code={chart} language="mermaid" isDark={isDark} />
     )
   }
 
   return (
     <div 
-      ref={containerRef} 
       className="mermaid-container flex justify-center my-4"
       dangerouslySetInnerHTML={{ __html: svg }} 
     />
   )
+})
+
+const MarkdownParagraph: NonNullable<Components["p"]> = ({ children, ...props }) => {
+  if (typeof children === "string") {
+    return (children as string).split("\n").map((line: string, index: number) => (
+      <p key={index} {...props}>{line}</p>
+    ))
+  }
+
+  return <p {...props}>{children}</p>
+}
+
+interface CodeBlockProps {
+  code: string
+  language: string
+  isDark: boolean
+}
+
+const CodeBlock = ({ code, language, isDark }: CodeBlockProps) => {
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code)
+      toast.success("代码已复制到剪贴板")
+    } catch (error) {
+      toast.error("复制代码失败")
+      console.error("复制代码失败:", error)
+    }
+  }
+
+  return (
+    <div className="group/code relative">
+      <button
+        type="button"
+        className="absolute right-2 top-2 z-10 inline-flex size-7 items-center justify-center rounded-md border bg-background/80 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-background hover:text-foreground group-hover/code:opacity-100"
+        onClick={handleCopy}
+        aria-label="复制代码"
+      >
+        <IconCopy className="size-4" />
+      </button>
+      <SyntaxHighlighter
+        language={language}
+        PreTag="pre"
+        wrapLines={true}
+        style={isDark ? oneDark : oneLight}
+        customStyle={{ textShadow: "none", background: "var(--muted)" }}
+        codeTagProps={{ style: { wordBreak: "break-all", whiteSpace: "pre-wrap", textShadow: "none" } }}
+      >
+        {code}
+      </SyntaxHighlighter>
+    </div>
+  )
+}
+
+function MarkdownCodeBlock({ children, isDark }: { children: React.ReactNode; isDark: boolean }) {
+  const childElement = children as React.ReactElement | undefined
+  const props = childElement?.props as { children?: string; className?: string } | undefined
+  const code = props?.children ?? ""
+  const language = props?.className?.replace("language-", "").trim() || "text"
+
+  if (language === "mermaid") {
+    return <Mermaid chart={String(code).trim()} isDark={isDark} />
+  }
+
+  return <CodeBlock code={String(code)} language={language} isDark={isDark} />
 }
 
 interface MarkdownProps {
@@ -143,126 +190,37 @@ function resolveRelativePath(href: string, currentPath: string): string {
   }
 }
 
-export function Markdown({ children, allowHtml = false, allowInternalLink = true, className }: MarkdownProps) {
+export const Markdown = memo(function Markdown({ children, allowHtml = false, allowInternalLink = true, className }: MarkdownProps) {
   const location = useLocation()
-  const [frontMatter, setFrontMatter] = useState<Record<string, any>>({})
-  const [content, setContent] = useState<string>(children)
-  
-  // 初始化并解析 front matter
-  useEffect(() => {
-    let mounted = true
-    setFrontMatter({})
-    setContent(children)
-    
-    async function parseFrontMatter() {
-      await initGrayMatter()
-      if (!mounted || !matter) {
-        return
+  const { resolvedTheme } = useTheme()
+  const isDark = resolvedTheme === "dark"
+  const markdownSource = typeof children === "string" ? children : ""
+  const components = useMemo<Components>(() => ({
+    a({ href, children, ...props }) {
+      if (isInternalLink(href)) {
+        const absolutePath = resolveRelativePath(href as string, location.pathname)
+        return <Link to={allowInternalLink ? absolutePath : ""} {...props}>{children}</Link>
       }
-      
-      try {
-        const result = matter(children)
-        if (mounted) {
-          setFrontMatter(result.data || {})
-          setContent(result.content)
-        }
-      } catch (err) {
-        console.error("Failed to parse front matter:", err)
-        if (mounted) {
-          setContent(children)
-        }
-      }
-    }
-    
-    parseFrontMatter()
-    
-    return () => {
-      mounted = false
-    }
-  }, [children])
-  
-  const hasFrontMatter = Object.keys(frontMatter).length > 0
+
+      return (
+        <a href={href} target="_blank" {...props}>
+          {children}
+        </a>
+      )
+    },
+    p: MarkdownParagraph,
+    pre: ({ children }) => <MarkdownCodeBlock isDark={isDark}>{children}</MarkdownCodeBlock>,
+  }), [allowInternalLink, isDark, location.pathname])
 
   return (
-    <div className={cn("markdown-body pb-2", className)}>
-      {/* 渲染 front matter */}
-      {hasFrontMatter && (
-        <div className="overflow-x-auto mb-4 border-b">
-          <table className="w-full text-sm">
-            <tbody>
-              {Object.entries(frontMatter).map(([key, value]) => (
-                <tr key={key} className="border-b border-border/50 last:border-0">
-                  <td className="py-2 pr-4 font-medium text-muted-foreground align-top w-32">
-                    {key}
-                  </td>
-                  <td className="py-2 break-words">
-                    {typeof value === 'object' && value !== null ? (
-                      <pre className="text-xs bg-background p-2 rounded overflow-x-auto">
-                        {JSON.stringify(value, null, 2)}
-                      </pre>
-                    ) : (
-                      <span>{String(value)}</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      
-      {/* 渲染 markdown 内容 */}
+    <div className={cn("markdown-body pb-2", isDark ? "markdown-body-dark" : "markdown-body-light", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={allowHtml ? [rehypeRaw, rehypeSanitize] : []}
-        components={{
-          a({ href, children, ...props }) {
-            if (isInternalLink(href)) {
-              const absolutePath = resolveRelativePath(href as string, location.pathname)
-              return <Link to={allowInternalLink ? absolutePath : ""} {...props}>{children}</Link>
-            } else {
-              return (
-                <a href={href} target="_blank" {...props}>
-                  {children}
-                </a>
-              )
-            }
-          },
-          p({children, ...props}) {
-            if (typeof children === 'string') {
-              return (children as string).split('\n').map((line: string, index: number) => (
-                <p key={index} {...props}>{line}</p>
-              ))
-            } else {
-              return <p {...props}>{children}</p>
-            }
-          },
-          pre({children}) {
-            const childElement = children as React.ReactElement | undefined
-            const props = childElement?.props as { children?: string; className?: string } | undefined
-            const code = props?.children ?? ''
-            const language = props?.className?.replace('language-', '').trim() || 'text'
-            
-            // 检测是否是 mermaid 代码块
-            if (language === 'mermaid') {
-              return <Mermaid chart={String(code).trim()} />
-            }
-            
-            return (
-              <SyntaxHighlighter
-                language={language}
-                PreTag="pre"
-                wrapLines={true}
-                codeTagProps={{ style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' } }}
-              >
-                {code}
-              </SyntaxHighlighter>
-            )
-          }
-        }}
+        components={components}
       >
-        {content}
+        {markdownSource}
       </ReactMarkdown>
     </div>
   )
-}
+})

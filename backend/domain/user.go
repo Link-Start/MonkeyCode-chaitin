@@ -2,14 +2,15 @@ package domain
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/chaitin/MonkeyCode/backend/db"
-	"github.com/chaitin/MonkeyCode/backend/pkg/cvt"
-
 	"github.com/chaitin/MonkeyCode/backend/consts"
+	"github.com/chaitin/MonkeyCode/backend/db"
+	"github.com/chaitin/MonkeyCode/backend/errcode"
+	"github.com/chaitin/MonkeyCode/backend/pkg/cvt"
 )
 
 type UserUsecase interface {
@@ -28,6 +29,7 @@ type UserRepo interface {
 	Get(ctx context.Context, uid uuid.UUID) (*db.User, error)
 	Update(ctx context.Context, uid uuid.UUID, name, avatarURL string) error
 	GetUserWithTeams(ctx context.Context, uid uuid.UUID) (*db.User, error)
+	WechatMPBound(ctx context.Context, uid uuid.UUID) (bool, error)
 	PasswordLogin(ctx context.Context, req *TeamLoginReq) (*db.User, error)
 	ChangePassword(ctx context.Context, uid uuid.UUID, currentPassword, newPassword string, isReset bool) error
 	GetUserByEmail(ctx context.Context, emails []string) ([]*db.User, error)
@@ -36,22 +38,31 @@ type UserRepo interface {
 
 // UserActiveRepo 用户活跃记录仓储接口
 type UserActiveRepo interface {
+	RecordActiveIP(ctx context.Context, key string, ip string) error
 	RecordActiveRecord(ctx context.Context, key consts.RedisKey, field string, score time.Time) error
 	GetActiveRecord(ctx context.Context, key consts.RedisKey, userID string) (time.Time, error)
 }
 
 type User struct {
-	ID         uuid.UUID         `json:"id"`
-	Name       string            `json:"name"`
-	AvatarURL  string            `json:"avatar_url"`
-	Email      string            `json:"email"`
-	Role       consts.UserRole   `json:"role"`
-	Status     consts.UserStatus `json:"status"`
-	IsBlocked  bool              `json:"is_blocked"`
-	Token       string            `json:"token,omitempty"`
-	Identities  []*UserIdentity   `json:"identities"`
-	Team        *Team             `json:"team,omitempty"`
-	HasPassword bool              `json:"has_password"`
+	ID            uuid.UUID         `json:"id"`
+	Name          string            `json:"name"`
+	AvatarURL     string            `json:"avatar_url"`
+	Email         string            `json:"email"`
+	Role          consts.UserRole   `json:"role"`
+	Status        consts.UserStatus `json:"status"`
+	IsBlocked     bool              `json:"is_blocked"`
+	Token         string            `json:"token,omitempty"`
+	WechatMPBound bool              `json:"wechat_mp_bound"`
+	Identities    []*UserIdentity   `json:"identities"`
+	Team          *Team             `json:"team,omitempty"`
+	HasPassword   bool              `json:"has_password"`
+}
+
+type SubscriptionResp struct {
+	Plan      string     `json:"plan"`
+	Source    string     `json:"source,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	AutoRenew bool       `json:"auto_renew"`
 }
 
 func (u *User) From(src *db.User) *User {
@@ -64,7 +75,7 @@ func (u *User) From(src *db.User) *User {
 	u.AvatarURL = src.AvatarURL
 	u.Email = src.Email
 	u.Role = src.Role
-	u.Status = consts.UserStatusActive
+	u.Status = src.Status
 	u.IsBlocked = src.IsBlocked
 	u.HasPassword = src.Password != ""
 	u.Identities = cvt.Iter(src.Edges.Identities, func(_ int, i *db.UserIdentity) *UserIdentity {
@@ -143,8 +154,15 @@ type GetAccountInfoReq struct {
 
 // ResetUserPasswordReq 修改密码请求
 type ResetUserPasswordReq struct {
-	NewPassword string `json:"new_password" validate:"required,min=8,max=32"`
+	NewPassword string `json:"new_password" validate:"required"`
 	Token       string `json:"token" validate:"required"`
+}
+
+func (r *ResetUserPasswordReq) Validate() error {
+	if len(r.NewPassword) < 8 || len(r.NewPassword) > 32 {
+		return errcode.ErrPasswordLength
+	}
+	return nil
 }
 
 // ResetUserPasswordEmailReq 发送重置密码邮件请求
@@ -153,8 +171,23 @@ type ResetUserPasswordEmailReq struct {
 	CaptchaToken string   `json:"captcha_token"`
 }
 
+func (r *ResetUserPasswordEmailReq) Validate() error {
+	if len(r.Emails) == 0 {
+		return errcode.ErrEmailRequired
+	}
+	for _, email := range r.Emails {
+		if strings.TrimSpace(email) == "" {
+			return errcode.ErrEmailRequired
+		}
+	}
+	return nil
+}
+
 // TeamMembersResp 团队成员列表响应
 type TeamMembersResp []*User
+
+// UserMemberListReq 用户侧团队成员列表请求
+type UserMemberListReq struct{}
 
 // ActivateReq 激活请求
 type ActivateReq struct {

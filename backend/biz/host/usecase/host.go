@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,12 +23,14 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/consts"
 	"github.com/chaitin/MonkeyCode/backend/db"
 	"github.com/chaitin/MonkeyCode/backend/domain"
+	"github.com/chaitin/MonkeyCode/backend/ent/types"
 	"github.com/chaitin/MonkeyCode/backend/errcode"
 	"github.com/chaitin/MonkeyCode/backend/pkg/cvt"
 	"github.com/chaitin/MonkeyCode/backend/pkg/delayqueue"
 	"github.com/chaitin/MonkeyCode/backend/pkg/entx"
 	"github.com/chaitin/MonkeyCode/backend/pkg/random"
 	"github.com/chaitin/MonkeyCode/backend/pkg/taskflow"
+	"github.com/chaitin/MonkeyCode/backend/pkg/vmstatus"
 	"github.com/chaitin/MonkeyCode/backend/templates"
 )
 
@@ -36,6 +40,7 @@ type HostUsecase struct {
 	taskflow         taskflow.Clienter
 	logger           *slog.Logger
 	repo             domain.HostRepo
+	taskRepo         domain.TaskRepo
 	userRepo         domain.UserRepo
 	girepo           domain.GitIdentityRepo
 	vmexpireQueue    *delayqueue.VMExpireQueue
@@ -45,15 +50,16 @@ type HostUsecase struct {
 
 func NewHostUsecase(i *do.Injector) (domain.HostUsecase, error) {
 	h := &HostUsecase{
-		cfg:              do.MustInvoke[*config.Config](i),
-		redis:            do.MustInvoke[*redis.Client](i),
-		taskflow:         do.MustInvoke[taskflow.Clienter](i),
-		logger:           do.MustInvoke[*slog.Logger](i).With("module", "HostUsecase"),
-		repo:             do.MustInvoke[domain.HostRepo](i),
-		userRepo:         do.MustInvoke[domain.UserRepo](i),
-		girepo:           do.MustInvoke[domain.GitIdentityRepo](i),
-		vmexpireQueue:    do.MustInvoke[*delayqueue.VMExpireQueue](i),
-		tokenProvider:    do.MustInvoke[*gituc.TokenProvider](i),
+		cfg:           do.MustInvoke[*config.Config](i),
+		redis:         do.MustInvoke[*redis.Client](i),
+		taskflow:      do.MustInvoke[taskflow.Clienter](i),
+		logger:        do.MustInvoke[*slog.Logger](i).With("module", "HostUsecase"),
+		repo:          do.MustInvoke[domain.HostRepo](i),
+		taskRepo:      do.MustInvoke[domain.TaskRepo](i),
+		userRepo:      do.MustInvoke[domain.UserRepo](i),
+		girepo:        do.MustInvoke[domain.GitIdentityRepo](i),
+		vmexpireQueue: do.MustInvoke[*delayqueue.VMExpireQueue](i),
+		tokenProvider: do.MustInvoke[*gituc.TokenProvider](i),
 	}
 
 	// 可选注入 PrivilegeChecker
@@ -80,7 +86,7 @@ func (h *HostUsecase) periodicEnqueueVm() {
 		}
 
 		for _, vm := range vms {
-			if vm.TTL <= 0 {
+			if vm.ExpiredAt == nil {
 				continue
 			}
 
@@ -89,8 +95,8 @@ func (h *HostUsecase) periodicEnqueueVm() {
 				VmID:   vm.ID,
 				HostID: vm.HostID,
 				EnvID:  vm.EnvironmentID,
-			}, vm.CreatedAt.Add(time.Duration(vm.TTL)*time.Second), vm.ID); err != nil {
-				h.logger.With("error", err, "vm", vm).Error("failed to enqueue vm")
+			}, *vm.ExpiredAt, vm.ID); err != nil {
+				h.logger.With("error", err, "vm_id", vm.ID, "environment_id", vm.EnvironmentID).Error("failed to enqueue vm")
 			}
 		}
 	}
@@ -127,6 +133,11 @@ func (h *HostUsecase) vmexpireConsumer() {
 				return err
 			}
 
+			if err := h.markRecycledTasksFinished(ctx, vm); err != nil {
+				innerLogger.ErrorContext(ctx, "failed to finish recycled tasks", "error", err)
+				return err
+			}
+
 			return nil
 		})
 
@@ -134,6 +145,27 @@ func (h *HostUsecase) vmexpireConsumer() {
 		index++
 		time.Sleep(10 * time.Second)
 	}
+}
+
+func (h *HostUsecase) markRecycledTasksFinished(ctx context.Context, vm *db.VirtualMachine) error {
+	var errs []error
+	for _, tk := range vm.Edges.Tasks {
+		if tk == nil {
+			continue
+		}
+		if tk.Status == consts.TaskStatusFinished || tk.Status == consts.TaskStatusError {
+			continue
+		}
+		err := h.taskRepo.Update(ctx, nil, tk.ID, func(up *db.TaskUpdateOne) error {
+			up.SetStatus(consts.TaskStatusFinished)
+			up.SetCompletedAt(time.Now())
+			return nil
+		})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("update task %s: %w", tk.ID, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // GetInstallCommand implements domain.HostUsecase.
@@ -167,19 +199,54 @@ func (h *HostUsecase) InstallScript(ctx context.Context, token *domain.InstallRe
 		return "", errcode.ErrInvalidInstallToken
 	}
 
-	tmp, err := template.New("install").Parse(string(templates.InstallTmpl))
+	tplName := "install"
+	tplContent := templates.InstallTmpl
+	if h.cfg.HostInstaller.Mode == "offline" {
+		tplName = "install_offline"
+		tplContent = templates.InstallOfflineTmpl
+	}
+
+	tmp, err := template.New(tplName).Parse(string(tplContent))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template %s", err)
 	}
 	buf := bytes.NewBuffer([]byte(""))
 	param := map[string]any{
-		"token":    token.Token,
-		"grpc_url": h.cfg.TaskFlow.GrpcURL,
+		"token":              token.Token,
+		"grpc_url":           h.cfg.TaskFlow.GrpcURL,
+		"base_url":           h.cfg.Server.BaseURL,
+		"installer_url":      h.installerURL(),
+		"docker_bundle_path": h.installerBundlePath("docker.tgz"),
+		"host_bundle_path":   h.hostBundlePath(),
 	}
 	if err := tmp.Execute(buf, param); err != nil {
 		return "", fmt.Errorf("failed to execute template %s", err)
 	}
 	return buf.String(), nil
+}
+
+func (h *HostUsecase) installerURL() string {
+	if h.cfg.Server.BaseURL == "" {
+		return ""
+	}
+	baseurl, err := url.Parse(h.cfg.Server.BaseURL)
+	if err != nil {
+		return ""
+	}
+	baseurl = baseurl.JoinPath(h.cfg.StaticFiles.RoutePrefix, "installer")
+	return strings.TrimRight(baseurl.String(), "/") + "/{{.arch}}/installer"
+}
+
+func (h *HostUsecase) hostBundlePath() string {
+	bundlePath := h.cfg.HostInstaller.BundlePath
+	if bundlePath == "" {
+		bundlePath = "installer/{{.arch}}/host.tgz"
+	}
+	return "/" + strings.Trim(h.cfg.StaticFiles.RoutePrefix, "/") + "/" + strings.TrimLeft(bundlePath, "/")
+}
+
+func (h *HostUsecase) installerBundlePath(name string) string {
+	return "/" + strings.Trim(h.cfg.StaticFiles.RoutePrefix, "/") + "/installer/{{.arch}}/" + name
 }
 
 // List implements domain.HostUsecase.
@@ -225,12 +292,16 @@ func (h *HostUsecase) List(ctx context.Context, uid uuid.UUID) (*domain.HostList
 		dHost := cvt.From(host, &domain.Host{Status: status})
 		dHost.IsDefault = dHost.GetIsDefault(user)
 		dHost.VirtualMachines = cvt.Iter(host.Edges.Vms, func(_ int, vm *db.VirtualMachine) *domain.VirtualMachine {
-			status := taskflow.VirtualMachineStatusOffline
-			if vmonline.OnlineMap[vm.ID] {
-				status = taskflow.VirtualMachineStatusOnline
-			}
 			return cvt.From(vm, &domain.VirtualMachine{
-				Status: status,
+				Status: vmstatus.Resolve(vmstatus.Input{
+					Online: vmonline.OnlineMap[vm.ID],
+					Conditions: cvt.NilWithZero(vm.Conditions, func(t *types.VirtualMachineCondition) []*types.Condition {
+						return t.Conditions
+					}),
+					IsRecycled: vm.IsRecycled,
+					CreatedAt:  vm.CreatedAt,
+					Now:        time.Now(),
+				}),
 			})
 		})
 
@@ -392,23 +463,25 @@ func (h *HostUsecase) CreateVM(ctx context.Context, user *domain.User, req *doma
 			return nil, fmt.Errorf("failed to create vm, vm is nil")
 		}
 
-		h.logger.InfoContext(ctx, "create vm success", "vm", tfvm)
+		h.logger.InfoContext(ctx, "create vm success", "vm_id", tfvm.ID, "environment_id", tfvm.EnvironmentID)
 
-		// 手动创建的 VM 使用 TTL 过期逻辑，任务创建的 VM 使用空闲检测逻辑
-		// 通过 Life 参数区分：Life > 0 为手动创建的 VM，使用 TTL 过期逻辑
+		// 手动创建的 VM 使用 expired_at 过期逻辑，任务创建的 VM 使用空闲检测逻辑
+		// 通过 Life 参数区分：Life > 0 为手动创建的 VM，使用过期时间逻辑
 		if req.Life > 0 {
+			expiredAt := req.Now.Add(time.Duration(req.Life) * time.Second)
 			if _, err := h.vmexpireQueue.Enqueue(ctx, VM_EXPIRE_QUEUE_KEY, &domain.VmExpireInfo{
 				UID:    user.ID,
 				VmID:   tfvm.ID,
 				HostID: req.HostID,
 				EnvID:  tfvm.EnvironmentID,
-			}, time.Now().Add(time.Duration(req.Life)*time.Second), tfvm.ID); err != nil {
-				h.logger.With("error", err, "vm", tfvm).ErrorContext(ctx, "failed to enqueue countdown vm")
+			}, expiredAt, tfvm.ID); err != nil {
+				h.logger.With("error", err, "vm_id", tfvm.ID, "environment_id", tfvm.EnvironmentID).ErrorContext(ctx, "failed to enqueue countdown vm")
 			}
 		}
 
 		return &domain.VirtualMachine{
 			ID:            tfvm.ID,
+			AccessToken:   tfvm.AccessToken,
 			EnvironmentID: tfvm.EnvironmentID,
 			Name:          req.Name,
 			Host: &domain.Host{
@@ -439,7 +512,7 @@ func (h *HostUsecase) DeleteVM(ctx context.Context, uid uuid.UUID, hostID, vmID 
 			h.logger.ErrorContext(ctx, "failed to delete vm", "error", err)
 		}
 
-		// 清理 TTL 过期队列中的残留任务
+		// 清理 expired_at 过期队列中的残留任务
 		_ = h.vmexpireQueue.Remove(ctx, VM_EXPIRE_QUEUE_KEY, vm.ID)
 
 		return nil
@@ -476,17 +549,16 @@ func (h *HostUsecase) VMInfo(ctx context.Context, uid uuid.UUID, id string) (*do
 		return nil, err
 	}
 
-	status := taskflow.VirtualMachineStatusOffline
-	if info, err := h.taskflow.VirtualMachiner().Info(ctx, taskflow.VirtualMachineInfoReq{
-		ID:     vm.ID,
-		UserID: vm.UserID.String(),
-	}); err == nil && info != nil && info.Status != taskflow.VirtualMachineStatusUnknown {
-		status = info.Status
-	} else if vmonline.OnlineMap[vm.ID] {
-		status = taskflow.VirtualMachineStatusOnline
-	}
 	dvm := cvt.From(vm, &domain.VirtualMachine{
-		Status: status,
+		Status: vmstatus.Resolve(vmstatus.Input{
+			Online: vmonline.OnlineMap[vm.ID],
+			Conditions: cvt.NilWithZero(vm.Conditions, func(t *types.VirtualMachineCondition) []*types.Condition {
+				return t.Conditions
+			}),
+			IsRecycled: vm.IsRecycled,
+			CreatedAt:  vm.CreatedAt,
+			Now:        time.Now(),
+		}),
 	})
 
 	if dvm.Host != nil {
@@ -581,7 +653,7 @@ func (h *HostUsecase) FireExpiredVM(ctx context.Context, fire bool) ([]domain.Fi
 
 	res := make([]domain.FireExpiredVMItem, 0)
 	for _, vm := range vms {
-		if vm.TTL <= 0 {
+		if vm.ExpiredAt == nil {
 			continue
 		}
 
@@ -589,7 +661,7 @@ func (h *HostUsecase) FireExpiredVM(ctx context.Context, fire bool) ([]domain.Fi
 			continue
 		}
 
-		if vm.CreatedAt.Add(time.Duration(vm.TTL) * time.Second).Before(time.Now()) {
+		if vm.ExpiredAt.Before(time.Now()) {
 			item := domain.FireExpiredVMItem{
 				ID:      vm.ID,
 				Message: "checked",
@@ -600,11 +672,11 @@ func (h *HostUsecase) FireExpiredVM(ctx context.Context, fire bool) ([]domain.Fi
 					VmID:   vm.ID,
 					HostID: vm.HostID,
 					EnvID:  vm.EnvironmentID,
-				}, vm.CreatedAt.Add(time.Duration(vm.TTL)*time.Second), vm.ID); err != nil {
-					h.logger.With("error", err, "vm", vm).Error("failed to enqueue vm")
+				}, *vm.ExpiredAt, vm.ID); err != nil {
+					h.logger.With("error", err, "vm_id", vm.ID, "environment_id", vm.EnvironmentID).Error("failed to enqueue vm")
 					item.Message = err.Error()
 				} else {
-					h.logger.With("vm", vm).Info("enqueued vm")
+					h.logger.With("vm_id", vm.ID, "environment_id", vm.EnvironmentID).Info("enqueued vm")
 					item.Message = "enqueued"
 				}
 			}
@@ -624,7 +696,7 @@ func (h *HostUsecase) EnqueueAllCountDownVM(ctx context.Context) ([]string, erro
 	res := make([]string, 0)
 
 	for _, vm := range vms {
-		if vm.TTL <= 0 {
+		if vm.ExpiredAt == nil {
 			continue
 		}
 
@@ -633,10 +705,10 @@ func (h *HostUsecase) EnqueueAllCountDownVM(ctx context.Context) ([]string, erro
 			VmID:   vm.ID,
 			HostID: vm.HostID,
 			EnvID:  vm.EnvironmentID,
-		}, vm.CreatedAt.Add(time.Duration(vm.TTL)*time.Second), vm.ID); err != nil {
-			h.logger.With("error", err, "vm", vm).Error("failed to enqueue vm")
+		}, *vm.ExpiredAt, vm.ID); err != nil {
+			h.logger.With("error", err, "vm_id", vm.ID, "environment_id", vm.EnvironmentID).Error("failed to enqueue vm")
 		} else {
-			h.logger.With("vm", vm).Info("enqueued vm")
+			h.logger.With("vm_id", vm.ID, "environment_id", vm.EnvironmentID).Info("enqueued vm")
 			res = append(res, vm.ID)
 		}
 	}
@@ -646,16 +718,16 @@ func (h *HostUsecase) EnqueueAllCountDownVM(ctx context.Context) ([]string, erro
 // UpdateVM implements domain.HostUsecase.
 func (h *HostUsecase) UpdateVM(ctx context.Context, req domain.UpdateVMReq) (*domain.VirtualMachine, error) {
 	vm, _, err := h.repo.UpdateVM(ctx, req, func(vm *db.VirtualMachine) error {
-		newExpiresAt := vm.CreatedAt.Add(time.Duration(vm.TTL) * time.Second)
+		newExpiresAt := vm.ExpiredAt
 
-		// 更新回收队列（仅针对 CountDown 类型的 VM）
-		if vm.TTLKind == consts.CountDown {
+		// 更新回收队列（仅针对有过期时间的 VM）
+		if newExpiresAt != nil {
 			if _, err := h.vmexpireQueue.Enqueue(ctx, VM_EXPIRE_QUEUE_KEY, &domain.VmExpireInfo{
 				UID:    vm.UserID,
 				VmID:   vm.ID,
 				HostID: vm.HostID,
 				EnvID:  vm.EnvironmentID,
-			}, newExpiresAt, vm.ID); err != nil {
+			}, *newExpiresAt, vm.ID); err != nil {
 				return err
 			}
 		}

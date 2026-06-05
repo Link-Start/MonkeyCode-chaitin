@@ -53,12 +53,17 @@ export enum ConstsNotifyChannelKind {
   NotifyChannelFeishu = "feishu",
   NotifyChannelWeCom = "wecom",
   NotifyChannelWebhook = "webhook",
+  NotifyChannelWechatMP = "wechat_mp",
 }
 
 export enum ConstsNotifyEventType {
   NotifyEventTaskCreated = "task.created",
   NotifyEventTaskEnded = "task.ended",
   NotifyEventVMExpiringSoon = "vm.expiring_soon",
+  NotifyEventQuotaRefreshed = "quota.refreshed",
+  NotifyEventQuotaBasicExhausted = "quota.basic_exhausted",
+  NotifyEventQuotaProExhausted = "quota.pro_exhausted",
+  NotifyEventQuotaUltraExhausted = "quota.ultra_exhausted",
 }
 
 export interface ConstsNotifyEventTypeInfo {
@@ -118,6 +123,17 @@ export enum ConstsProjectIssueStatus {
   ProjectIssueStatusCompleted = "completed",
 }
 
+export enum ConstsSubscriptionPeriodUnit {
+  PeriodMonth = "month",
+  PeriodYear = "year",
+}
+
+export enum ConstsSubscriptionPlan {
+  PlanBasic = "basic",
+  PlanPro = "pro",
+  PlanUltra = "ultra",
+}
+
 export enum ConstsTaskStatus {
   TaskStatusPending = "pending",
   TaskStatusProcessing = "processing",
@@ -150,6 +166,11 @@ export enum ConstsTerminalMode {
   TerminalModeReadWrite = "read_write",
 }
 
+export enum ConstsTransactionInoutType {
+  TransactionInoutTypeIn = "in",
+  TransactionInoutTypeOut = "out",
+}
+
 export enum ConstsTransactionKind {
   TransactionKindSignupBonus = "signup_bonus",
   TransactionKindVoucherExchange = "voucher_exchange",
@@ -158,14 +179,17 @@ export enum ConstsTransactionKind {
   TransactionKindInvitationReward = "invitation_reward",
   TransactionKindProSubscription = "pro_subscription",
   TransactionKindProAutoRenew = "pro_auto_renew",
+  TransactionKindUltraSubscription = "ultra_subscription",
+  TransactionKindUltraAutoRenew = "ultra_auto_renew",
+  TransactionKindProUpgradeRefund = "pro_upgrade_refund",
   TransactionKindDailyGrant = "daily_grant",
+  TransactionKindMCPToolConsumption = "mcp_tool_consumption",
   TransactionKindTopUp = "top_up",
-}
-
-export enum ConstsUploadUsage {
-  UploadUsageAvatar = "avatar",
-  UploadUsageSpec = "spec",
-  UploadUsageRepo = "repo",
+  TransactionKindCheckin = "checkin",
+  TransactionKindViolationFine = "violation_fine",
+  TransactionKindSubscriptionPurchase = "subscription_purchase",
+  TransactionKindSubscriptionGrant = "subscription_grant",
+  TransactionKindDailyBalanceMigration = "daily_balance_migration",
 }
 
 export enum ConstsUserPlatform {
@@ -187,6 +211,7 @@ export enum ConstsUserRole {
 export enum ConstsUserStatus {
   UserStatusActive = "active",
   UserStatusInactive = "inactive",
+  UserStatusBanned = "banned",
 }
 
 export interface Dbv2Cursor {
@@ -248,6 +273,8 @@ export interface DomainAddTeamModelReq {
   interface_type: "openai_chat" | "openai_responses" | "anthropic";
   model: string;
   provider: string;
+  remark?: string;
+  support_image?: boolean;
   temperature?: number;
 }
 
@@ -268,6 +295,11 @@ export interface DomainAddTeamUserReq {
 }
 
 export interface DomainAddTeamUserResp {
+  users?: DomainTeamUser[];
+}
+
+export interface DomainAddTeamUserWithPasswordResp {
+  passwords?: DomainTeamUserPassword[];
   users?: DomainTeamUser[];
 }
 
@@ -308,12 +340,20 @@ export interface DomainAutoRenewReq {
 export interface DomainAvailableModelResp {
   access_level?: string;
   id?: string;
-  /** 点数/1K input tokens（账面值） */
+  /** 积分/1K input tokens（账面值） */
   input_price?: number;
   is_free?: boolean;
+  is_hidden?: boolean;
   name?: string;
-  /** 点数/1K output tokens（账面值） */
+  /** 积分/1K output tokens（账面值） */
   output_price?: number;
+  support_image?: boolean;
+}
+
+export interface DomainBindQRCodeResp {
+  expire_seconds?: number;
+  qrcode_url?: string;
+  ticket?: string;
 }
 
 export interface DomainBranch {
@@ -339,6 +379,15 @@ export interface DomainCheckByConfigReq {
   provider: ConstsModelProvider;
 }
 
+export interface DomainCheckInReq {
+  captcha_token: string;
+}
+
+export interface DomainCheckInResp {
+  /** 今天是否已签到 */
+  checked_in?: boolean;
+}
+
 export interface DomainCheckModelResp {
   error?: string;
   success?: boolean;
@@ -347,6 +396,8 @@ export interface DomainCheckModelResp {
 export interface DomainCollaborator {
   avatar_url?: string;
   email?: string;
+  /** 免费 Tokens 耗尽后是否继续启用积分消费模型，未配置时默认 true */
+  enable_credit_consumption?: boolean;
   has_password?: boolean;
   id?: string;
   /** 用户绑定的身份列表，例如 github, gitlab */
@@ -355,10 +406,12 @@ export interface DomainCollaborator {
   name?: string;
   /** 权限 */
   permission?: ConstsProjectCollaboratorRole;
+  read_only?: boolean;
   role?: ConstsUserRole;
   status?: ConstsUserStatus;
   team?: DomainTeam;
   token?: string;
+  wechat_mp_bound?: boolean;
 }
 
 export interface DomainCreateCollaboratorItem {
@@ -402,11 +455,18 @@ export interface DomainCreateIssueReq {
 export interface DomainCreateModelReq {
   api_key: string;
   base_url: string;
+  /** @min 1 */
+  context_limit?: number;
   interface_type: "openai_chat" | "openai_responses" | "anthropic";
   is_default?: boolean;
   model: string;
+  /** @min 1 */
+  output_limit?: number;
   provider: string;
+  remark?: string;
+  support_image?: boolean;
   temperature?: number;
+  thinking_enabled?: boolean;
 }
 
 export interface DomainCreateNotifyChannelReq {
@@ -465,6 +525,15 @@ export interface DomainCreateTaskReq {
   task_type?: ConstsTaskType;
 }
 
+export interface DomainCreateUserMCPUpstreamReq {
+  description?: string;
+  enabled?: boolean;
+  headers?: DomainMCPHeader[];
+  name?: string;
+  slug?: string;
+  url?: string;
+}
+
 export interface DomainCreateVMReq {
   /** Git 身份 ID */
   git_identity_id?: string;
@@ -484,6 +553,11 @@ export interface DomainCreateVMReq {
   repo?: DomainTaskRepoReq;
   /** 资源配置 */
   resource: DomainResource;
+}
+
+export interface DomainCreditConsumptionReq {
+  /** 免费 Tokens 耗尽后是否继续启用积分消费模型 */
+  enable_credit_consumption?: boolean;
 }
 
 export interface DomainDeleteImageReq {
@@ -611,6 +685,13 @@ export interface DomainImage {
   remark?: string;
 }
 
+export interface DomainImportLicenseResp {
+  /** license 唯一 ID */
+  license_id?: string;
+  /** 导入后的授权状态 */
+  state?: DomainLicenseState;
+}
+
 export interface DomainInstallCommand {
   command?: string;
 }
@@ -627,6 +708,45 @@ export interface DomainInvitationListResp {
   count?: number;
   items?: DomainInvitationItem[];
   page?: Dbv2PageInfo;
+}
+
+export interface DomainLicenseMachineCodeResp {
+  /** 机器码生成时间，RFC3339 */
+  generated_at?: string;
+  /** 客户部署实例 ID */
+  installation_id?: string;
+  /** 产品标识，首版固定为 monkeycode-enterprise */
+  product?: DomainLicenseProduct;
+  /** 当前私有化产品版本 */
+  product_version?: string;
+  /** 协议版本，首版固定为 1 */
+  version?: number;
+}
+
+export enum DomainLicenseProduct {
+  LicenseProductMonkeyCodeEnterprise = "monkeycode-enterprise",
+}
+
+export enum DomainLicenseState {
+  LicenseStateMissing = "missing",
+  LicenseStateActive = "active",
+  LicenseStateExpired = "expired",
+  LicenseStateInvalid = "invalid",
+}
+
+export interface DomainLicenseStatusResp {
+  /** 客户名称 */
+  customer_name?: string;
+  /** 授权过期时间，RFC3339 */
+  expires_at?: string;
+  /** 当前生效 license ID */
+  license_id?: string;
+  /** 授权席位数 */
+  seats?: number;
+  /** 当前授权状态 */
+  state?: DomainLicenseState;
+  /** 当前已使用席位数 */
+  used_seats?: number;
 }
 
 export interface DomainListAuditsResponse {
@@ -726,11 +846,51 @@ export interface DomainListTransactionResp {
   transactions?: DomainTransactionLog[];
 }
 
+export interface DomainListUserMCPUpstreamsResp {
+  items?: DomainMCPUpstream[];
+}
+
 export interface DomainListUserPlaygroundPostResp {
   /** 游标信息 */
   page?: Dbv2Cursor;
   /** 广场帖子列表 */
   playground_posts?: DomainPlaygroundPost[];
+}
+
+export interface DomainMCPHeader {
+  name?: string;
+  value?: string;
+}
+
+export interface DomainMCPTool {
+  created_at?: number;
+  description?: string;
+  enabled?: boolean;
+  id?: string;
+  input_schema?: Record<string, any>;
+  name?: string;
+  namespaced_name?: string;
+  price?: number;
+  scope?: GithubComChaitinMonkeyCodeBackendDbMcptoolScope;
+}
+
+export interface DomainMCPUpstream {
+  created_at?: number;
+  description?: string;
+  enabled?: boolean;
+  headers?: DomainMCPHeader[];
+  health_checked_at?: number;
+  health_status?: string;
+  id?: string;
+  last_synced_at?: number;
+  name?: string;
+  scope?: GithubComChaitinMonkeyCodeBackendDbMcpupstreamScope;
+  slug?: string;
+  sync_status?: string;
+  tools?: DomainMCPTool[];
+  type?: string;
+  url?: string;
+  user?: DomainUser;
 }
 
 export interface DomainMemberListResp {
@@ -739,23 +899,53 @@ export interface DomainMemberListResp {
 }
 
 export interface DomainModel {
-  /** 访问级别 basic | pro */
+  /** 访问级别 basic | pro | ultra */
   access_level?: string;
   api_key?: string;
   base_url?: string;
+  context_limit?: number;
   created_at?: number;
   id?: string;
   interface_type?: ConstsInterfaceType;
   is_default?: boolean;
   is_free?: boolean;
+  is_hidden?: boolean;
   last_check_at?: number;
   last_check_error?: string;
   last_check_success?: boolean;
   model?: string;
+  output_limit?: number;
   owner?: DomainOwner;
   provider?: string;
+  remark?: string;
+  support_image?: boolean;
   temperature?: number;
+  thinking_enabled?: boolean;
   updated_at?: number;
+  weight?: number;
+}
+
+export interface DomainModelBrief {
+  access_level?: string;
+  context_limit?: number;
+  created_at?: number;
+  id?: string;
+  interface_type?: ConstsInterfaceType;
+  is_free?: boolean;
+  is_hidden?: boolean;
+  last_check_at?: number;
+  last_check_error?: string;
+  last_check_success?: boolean;
+  model?: string;
+  output_limit?: number;
+  owner?: DomainOwner;
+  provider?: string;
+  remark?: string;
+  support_image?: boolean;
+  temperature?: number;
+  thinking_enabled?: boolean;
+  updated_at?: number;
+  weight?: number;
 }
 
 export interface DomainNotifyChannel {
@@ -864,12 +1054,8 @@ export interface DomainPlaygroundTaskPost {
 }
 
 export interface DomainPresignReq {
-  /** 预签名URL过期时间(秒)，默认600秒(10分钟)，最大604800秒(7天) */
-  expires?: number;
-  /** 文件名 */
+  /** 文件名，服务端会保留扩展名并生成临时文件 object key */
   filename: string;
-  /** 上传用途枚举: avatar(头像), spec(规格), repo(仓库) */
-  usage: "avatar" | "spec" | "repo";
 }
 
 export interface DomainPresignResp {
@@ -1004,7 +1190,7 @@ export interface DomainProjectTask {
   id: string;
   identity?: DomainGitIdentity;
   image?: DomainImage;
-  model?: DomainModel;
+  model?: DomainModelBrief;
   repo_filename?: string;
   repo_url?: string;
   /** 统计数据 */
@@ -1015,6 +1201,8 @@ export interface DomainProjectTask {
   sub_type?: ConstsTaskSubType;
   /** 任务摘要 */
   summary?: string;
+  /** 任务标题 */
+  title?: string;
   /** 任务类型 */
   type?: ConstsTaskType;
   /** 虚拟机 */
@@ -1040,8 +1228,14 @@ export interface DomainPullRequest {
 }
 
 export interface DomainRechargeReq {
-  /** 充值点数: 10000 / 50000 / 300000 */
+  /** 积分充值套餐: 2000 / 15000 / 100000 / 500000 */
   credits?: number;
+  /** 购买周期数量，必须大于 0 */
+  period_count?: number;
+  /** 购买周期: month | year */
+  period_unit?: ConstsSubscriptionPeriodUnit;
+  /** 会员版本: pro | ultra */
+  plan?: ConstsSubscriptionPlan;
 }
 
 export interface DomainRechargeResp {
@@ -1212,12 +1406,18 @@ export interface DomainStats {
   repo_stars?: number;
 }
 
+export interface DomainSubscribeReq {
+  plan: "pro" | "ultra";
+}
+
 export interface DomainSubscriptionResp {
   auto_renew?: boolean;
+  /** 免费 Tokens 耗尽后是否继续启用积分消费模型，未配置时默认 true */
+  enable_credit_consumption?: boolean;
   expires_at?: string;
-  /** "basic" | "pro" */
+  /** "basic" | "pro" | "ultra" */
   plan?: string;
-  /** "points_exchange" | "team_member" | "admin_grant" */
+  /** "purchase" | "team_member" | "admin_grant" */
   source?: string;
 }
 
@@ -1236,7 +1436,7 @@ export interface DomainTask {
   id?: string;
   identity?: DomainGitIdentity;
   image?: DomainImage;
-  model?: DomainModel;
+  model?: DomainModelBrief;
   repo_filename?: string;
   repo_url?: string;
   /** 统计数据 */
@@ -1247,6 +1447,8 @@ export interface DomainTask {
   sub_type?: ConstsTaskSubType;
   /** 任务摘要 */
   summary?: string;
+  /** 任务标题 */
+  title?: string;
   /** 任务类型 */
   type?: ConstsTaskType;
   /** 虚拟机 */
@@ -1279,7 +1481,7 @@ export interface DomainTaskRepoReq {
 export interface DomainTaskRoundsResp {
   chunks?: DomainTaskChunkEntry[];
   has_more?: boolean;
-  /** 下一页游标（最早条目的时间戳 ns） */
+  /** 下一页游标 */
   next_cursor?: string;
 }
 
@@ -1293,6 +1495,72 @@ export interface DomainTaskStats {
 export interface DomainTeam {
   id?: string;
   name?: string;
+}
+
+export interface DomainTeamDashboardConsumptionInsight {
+  id?: string;
+  llm_requests?: number;
+  name?: string;
+  percent?: number;
+  total_tokens?: number;
+  type?: string;
+}
+
+export interface DomainTeamDashboardInsights {
+  active_members?: DomainTeamDashboardMemberInsight[];
+  high_consumption?: DomainTeamDashboardConsumptionInsight[];
+  long_running_tasks?: DomainTeamDashboardTaskInsight[];
+}
+
+export interface DomainTeamDashboardMemberInsight {
+  email?: string;
+  group_name?: string;
+  last_active_at?: number;
+  name?: string;
+  task_count?: number;
+  user_id?: string;
+}
+
+export interface DomainTeamDashboardMetrics {
+  active_members?: number;
+  active_rate?: number;
+  average_duration?: number;
+  finished_task_count?: number;
+  llm_requests?: number;
+  running_task_count?: number;
+  task_count?: number;
+  total_members?: number;
+  total_tokens?: number;
+}
+
+export interface DomainTeamDashboardResp {
+  end_at?: number;
+  insights?: DomainTeamDashboardInsights;
+  metrics?: DomainTeamDashboardMetrics;
+  range?: string;
+  start_at?: number;
+  trends?: DomainTeamDashboardTrends;
+}
+
+export interface DomainTeamDashboardTaskInsight {
+  created_at?: number;
+  creator?: string;
+  duration?: number;
+  host_name?: string;
+  status?: string;
+  task_id?: string;
+  title?: string;
+}
+
+export interface DomainTeamDashboardTrendPoint {
+  date?: string;
+  value?: number;
+}
+
+export interface DomainTeamDashboardTrends {
+  active_members?: DomainTeamDashboardTrendPoint[];
+  task_counts?: DomainTeamDashboardTrendPoint[];
+  token_usage?: DomainTeamDashboardTrendPoint[];
 }
 
 export interface DomainTeamGroup {
@@ -1342,11 +1610,14 @@ export interface DomainTeamModel {
   groups?: DomainTeamGroup[];
   id?: string;
   interface_type?: ConstsInterfaceType;
+  is_hidden?: boolean;
   last_check_at?: number;
   last_check_error?: string;
   last_check_success?: boolean;
   model?: string;
   provider?: string;
+  remark?: string;
+  support_image?: boolean;
   temperature?: number;
   updated_at?: number;
 }
@@ -1374,6 +1645,11 @@ export interface DomainTeamUserInfo {
   user?: DomainUser;
 }
 
+export interface DomainTeamUserPassword {
+  email?: string;
+  password?: string;
+}
+
 export interface DomainTerminal {
   /** 当前连接数 */
   connected_count?: number;
@@ -1394,6 +1670,8 @@ export interface DomainTransactionLog {
   amount_daily?: number;
   /** 交易时间 */
   created_at?: number;
+  /** 收支类型 */
+  inout_type?: ConstsTransactionInoutType;
   /** 交易类型 */
   kind?: ConstsTransactionKind;
   /** 交易简介 */
@@ -1455,11 +1733,18 @@ export interface DomainUpdateIssueReq {
 export interface DomainUpdateModelReq {
   api_key?: string;
   base_url?: string;
+  /** @min 1 */
+  context_limit?: number;
   interface_type?: "openai_chat" | "openai_responses" | "anthropic";
   is_default?: boolean;
   model?: string;
+  /** @min 1 */
+  output_limit?: number;
   provider?: string;
+  remark?: string;
+  support_image?: boolean;
   temperature?: number;
+  thinking_enabled?: boolean;
 }
 
 export interface DomainUpdateNotifyChannelReq {
@@ -1484,6 +1769,10 @@ export interface DomainUpdateProjectReq {
   name?: string;
 }
 
+export interface DomainUpdateTaskReq {
+  title?: string;
+}
+
 export interface DomainUpdateTeamGroupReq {
   name: string;
 }
@@ -1506,6 +1795,8 @@ export interface DomainUpdateTeamModelReq {
   interface_type?: "openai_chat" | "openai_responses" | "anthropic";
   model?: string;
   provider?: string;
+  remark?: string;
+  support_image?: boolean;
   temperature?: number;
 }
 
@@ -1523,6 +1814,19 @@ export interface DomainUpdateTeamUserReq {
 
 export interface DomainUpdateTeamUserResp {
   user?: DomainUser;
+}
+
+export interface DomainUpdateUserMCPToolSettingReq {
+  enabled?: boolean;
+}
+
+export interface DomainUpdateUserMCPUpstreamReq {
+  description?: string;
+  enabled?: boolean;
+  headers?: DomainMCPHeader[];
+  name?: string;
+  slug?: string;
+  url?: string;
 }
 
 export interface DomainUpdateUserResp {
@@ -1546,16 +1850,20 @@ export interface DomainUpdateVMReq {
 export interface DomainUser {
   avatar_url?: string;
   email?: string;
+  /** 免费 Tokens 耗尽后是否继续启用积分消费模型，未配置时默认 true */
+  enable_credit_consumption?: boolean;
   has_password?: boolean;
   id?: string;
   /** 用户绑定的身份列表，例如 github, gitlab */
   identities?: DomainUserIdentity[];
   is_blocked?: boolean;
   name?: string;
+  read_only?: boolean;
   role?: ConstsUserRole;
   status?: ConstsUserStatus;
   team?: DomainTeam;
   token?: string;
+  wechat_mp_bound?: boolean;
 }
 
 export interface DomainUserIdentity {
@@ -1614,12 +1922,14 @@ export interface DomainVirtualMachine {
 }
 
 export interface DomainWallet {
-  /** 主余额 */
+  /** 积分余额 */
   balance?: number;
-  /** 当日钱包余额 */
-  daily_balance?: number;
-  /** 当日钱包刷新时间 */
-  daily_refreshed_at?: string;
+  /** 基础会员每日模型剩余 tokens */
+  daily_basic_token_balance?: number;
+  /** 专业会员每日模型剩余 tokens */
+  daily_pro_token_balance?: number;
+  /** 旗舰会员每日模型剩余 tokens */
+  daily_ultra_token_balance?: number;
   id?: string;
 }
 
@@ -1638,6 +1948,7 @@ export interface GitInChaitinNetAiMonkeycodeMonkeycodeAiEntTypesCondition {
   type?: GitInChaitinNetAiMonkeycodeMonkeycodeAiEntTypesConditionType;
 }
 
+/** @format int32 */
 export enum GitInChaitinNetAiMonkeycodeMonkeycodeAiEntTypesConditionStatus {
   ConditionStatusCONDITIONSTATUSUNKNOWN = 0,
   ConditionStatusCONDITIONSTATUSINPROGRESS = 1,
@@ -1666,6 +1977,16 @@ export interface GithubComGoYokoWebResp {
   code?: number;
   data?: any;
   message?: string;
+}
+
+export enum GithubComChaitinMonkeyCodeBackendDbMcptoolScope {
+  ScopeUser = "user",
+  ScopePlatform = "platform",
+}
+
+export enum GithubComChaitinMonkeyCodeBackendDbMcpupstreamScope {
+  ScopeUser = "user",
+  ScopePlatform = "platform",
 }
 
 export interface GithubComChaitinMonkeyCodeBackendDomainIDReqGithubComGoogleUuidUUID {
@@ -1946,6 +2267,29 @@ export class HttpClient<SecurityDataType = unknown> {
 export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDataType> {
   api = {
     /**
+     * @description 通过管理后台生成的一次性 token，以只读方式登录指定用户账号
+     *
+     * @tags 【用户】认证
+     * @name V1AuthImpersonateList
+     * @summary 管理员模拟登录
+     * @request GET:/api/v1/auth/impersonate
+     */
+    v1AuthImpersonateList: (
+      query: {
+        /** 一次性模拟登录 token */
+        token: string;
+      },
+      params: RequestParams = {},
+    ) =>
+      this.request<any, string>({
+        path: `/api/v1/auth/impersonate`,
+        method: "GET",
+        query: query,
+        type: ContentType.Json,
+        ...params,
+      }),
+
+    /**
      * @description 获取 Gitea OAuth 授权 URL
      *
      * @tags 【用户】git 身份管理
@@ -2065,6 +2409,88 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
         GitInChaitinNetGoDevWebResp
       >({
         path: `/api/v1/gitlab/sites`,
+        method: "GET",
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 私有化部署直接上传 license.lic 文件。SaaS 环境仅用于生成 Swagger 文档，实际业务由 MonkeyCodePro 实现。
+     *
+     * @tags 【License】License
+     * @name V1LicenseImportCreate
+     * @summary 导入 license
+     * @request POST:/api/v1/license/import
+     * @secure
+     */
+    v1LicenseImportCreate: (
+      data: {
+        /**
+         * license.lic 文件
+         * @format binary
+         */
+        file: File;
+      },
+      params: RequestParams = {},
+    ) =>
+      this.request<
+        GitInChaitinNetGoDevWebResp & {
+          data?: DomainImportLicenseResp;
+        },
+        GitInChaitinNetGoDevWebResp
+      >({
+        path: `/api/v1/license/import`,
+        method: "POST",
+        body: data,
+        secure: true,
+        type: ContentType.FormData,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 私有化部署导出 machine-code.json。SaaS 环境仅用于生成 Swagger 文档，实际业务由 MonkeyCodePro 实现。
+     *
+     * @tags 【License】License
+     * @name V1LicenseMachineCodeList
+     * @summary 导出机器码
+     * @request GET:/api/v1/license/machine-code
+     * @secure
+     */
+    v1LicenseMachineCodeList: (params: RequestParams = {}) =>
+      this.request<
+        GitInChaitinNetGoDevWebResp & {
+          data?: DomainLicenseMachineCodeResp;
+        },
+        GitInChaitinNetGoDevWebResp
+      >({
+        path: `/api/v1/license/machine-code`,
+        method: "GET",
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 私有化部署查看当前 license 状态。SaaS 环境仅用于生成 Swagger 文档，实际业务由 MonkeyCodePro 实现。
+     *
+     * @tags 【License】License
+     * @name V1LicenseStatusList
+     * @summary 查看 license 状态
+     * @request GET:/api/v1/license/status
+     * @secure
+     */
+    v1LicenseStatusList: (params: RequestParams = {}) =>
+      this.request<
+        GitInChaitinNetGoDevWebResp & {
+          data?: DomainLicenseStatusResp;
+        },
+        GitInChaitinNetGoDevWebResp
+      >({
+        path: `/api/v1/license/status`,
         method: "GET",
         secure: true,
         type: ContentType.Json,
@@ -2407,8 +2833,39 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       },
       params: RequestParams = {},
     ) =>
-      this.request<DomainListAuditsResponse, GitInChaitinNetGoDevWebResp>({
+      this.request<DomainListAuditsResponse, GithubComGoYokoWebResp>({
         path: `/api/v1/teams/audits`,
+        method: "GET",
+        query: query,
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 获取团队活跃、任务、耗时、Token 消耗趋势和洞察列表
+     *
+     * @tags 【Team 管理员】团队概览
+     * @name V1TeamsDashboardList
+     * @summary 获取团队管理概览
+     * @request GET:/api/v1/teams/dashboard
+     * @secure
+     */
+    v1TeamsDashboardList: (
+      query?: {
+        /** 时间范围：today、7d、30d */
+        range?: string;
+      },
+      params: RequestParams = {},
+    ) =>
+      this.request<
+        GithubComGoYokoWebResp & {
+          data?: DomainTeamDashboardResp;
+        },
+        GithubComGoYokoWebResp
+      >({
+        path: `/api/v1/teams/dashboard`,
         method: "GET",
         query: query,
         secure: true,
@@ -3264,6 +3721,31 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
+     * @description 创建团队成员，后端生成初始密码并只在响应中返回一次
+     *
+     * @tags 【Team 管理员】分组成员管理
+     * @name V1TeamsUsersWithPasswordCreate
+     * @summary 创建团队成员并返回初始密码
+     * @request POST:/api/v1/teams/users/with-password
+     * @secure
+     */
+    v1TeamsUsersWithPasswordCreate: (req: DomainAddTeamUserReq, params: RequestParams = {}) =>
+      this.request<
+        GithubComGoYokoWebResp & {
+          data?: DomainAddTeamUserWithPasswordResp;
+        },
+        GithubComGoYokoWebResp
+      >({
+        path: `/api/v1/teams/users/with-password`,
+        method: "POST",
+        body: req,
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
      * @description 更新团队成员信息
      *
      * @tags 【Team 管理员】分组成员管理
@@ -3282,6 +3764,30 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
         path: `/api/v1/teams/users/${userId}`,
         method: "PUT",
         body: req,
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 管理员为团队成员生成新密码，密码只在响应中返回一次
+     *
+     * @tags 【Team 管理员】分组成员管理
+     * @name V1TeamsUsersPasswordsResetUpdate
+     * @summary 重置团队成员密码
+     * @request PUT:/api/v1/teams/users/{user_id}/passwords/reset
+     * @secure
+     */
+    v1TeamsUsersPasswordsResetUpdate: (userId: string, params: RequestParams = {}) =>
+      this.request<
+        GithubComGoYokoWebResp & {
+          data?: DomainTeamUserPassword;
+        },
+        GithubComGoYokoWebResp
+      >({
+        path: `/api/v1/teams/users/${userId}/passwords/reset`,
+        method: "PUT",
         secure: true,
         type: ContentType.Json,
         format: "json",
@@ -3325,11 +3831,11 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
-     * @description 获取预签名上传URL，客户端可以使用该URL直接上传文件到OSS（使用PUT方法）
+     * @description 获取临时文件上传 URL，客户端使用 `upload_url` 通过 PUT 直传 OSS，上传完成后将 `access_url` 作为任务创建或 user-input 的 `attachment_urls` 使用。 请求只需要 `filename`；旧客户端多传 `usage` 会被忽略。预签名 URL 固定 10 分钟过期，过期只影响 URL 可用性，不代表 OSS 对象自动删除。
      *
      * @tags 【上传】上传
      * @name V1UploaderPresignCreate
-     * @summary 获取预签名上传URL
+     * @summary 获取临时文件预签名上传URL
      * @request POST:/api/v1/uploader/presign
      * @secure
      */
@@ -3367,7 +3873,12 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       },
       params: RequestParams = {},
     ) =>
-      this.request<DomainUpdateUserResp, GitInChaitinNetGoDevWebResp>({
+      this.request<
+        GithubComGoYokoWebResp & {
+          data?: DomainUpdateUserResp;
+        },
+        any
+      >({
         path: `/api/v1/users`,
         method: "PUT",
         body: data,
@@ -3485,6 +3996,8 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
         id: string;
         /** 文件/目录路径 */
         path: string;
+        /** 下载文件名 */
+        filename?: string;
       },
       params: RequestParams = {},
     ) =>
@@ -3862,7 +4375,14 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
      * @request GET:/api/v1/users/git-identities/{id}
      * @secure
      */
-    v1UsersGitIdentitiesDetail: (id: string, params: RequestParams = {}) =>
+    v1UsersGitIdentitiesDetail: (
+      id: string,
+      query?: {
+        /** 是否刷新缓存 */
+        flush?: boolean;
+      },
+      params: RequestParams = {},
+    ) =>
       this.request<
         GithubComGoYokoWebResp & {
           data?: DomainGitIdentity;
@@ -3871,6 +4391,7 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       >({
         path: `/api/v1/users/git-identities/${id}`,
         method: "GET",
+        query: query,
         secure: true,
         type: ContentType.Json,
         format: "json",
@@ -4502,7 +5023,143 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
-     * @description 获取团队成员列表
+     * @description 更新当前登录用户指定 MCP Tool 的启用状态
+     *
+     * @tags 【用户】MCP 配置
+     * @name V1UsersMcpToolsUpdate
+     * @summary 更新当前用户的 MCP Tool 开关配置
+     * @request PUT:/api/v1/users/mcp/tools/{id}
+     * @secure
+     */
+    v1UsersMcpToolsUpdate: (id: string, req: DomainUpdateUserMCPToolSettingReq, params: RequestParams = {}) =>
+      this.request<GithubComGoYokoWebResp, GithubComGoYokoWebResp>({
+        path: `/api/v1/users/mcp/tools/${id}`,
+        method: "PUT",
+        body: req,
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 获取当前登录用户可管理的 MCP Upstream 列表
+     *
+     * @tags 【用户】MCP 配置
+     * @name V1UsersMcpUpstreamsList
+     * @summary 获取当前用户的 MCP Upstream 列表
+     * @request GET:/api/v1/users/mcp/upstreams
+     * @secure
+     */
+    v1UsersMcpUpstreamsList: (
+      query?: {
+        /** 游标，首页传空。下一页回传回包中的 cursor */
+        cursor?: string;
+        /** 页数 */
+        limit?: number;
+      },
+      params: RequestParams = {},
+    ) =>
+      this.request<
+        GithubComGoYokoWebResp & {
+          data?: DomainListUserMCPUpstreamsResp;
+        },
+        GithubComGoYokoWebResp
+      >({
+        path: `/api/v1/users/mcp/upstreams`,
+        method: "GET",
+        query: query,
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 为当前登录用户创建自定义 MCP Upstream
+     *
+     * @tags 【用户】MCP 配置
+     * @name V1UsersMcpUpstreamsCreate
+     * @summary 创建当前用户的 MCP Upstream
+     * @request POST:/api/v1/users/mcp/upstreams
+     * @secure
+     */
+    v1UsersMcpUpstreamsCreate: (req: DomainCreateUserMCPUpstreamReq, params: RequestParams = {}) =>
+      this.request<
+        GithubComGoYokoWebResp & {
+          data?: DomainMCPUpstream;
+        },
+        GithubComGoYokoWebResp
+      >({
+        path: `/api/v1/users/mcp/upstreams`,
+        method: "POST",
+        body: req,
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 更新当前登录用户指定的 MCP Upstream 配置
+     *
+     * @tags 【用户】MCP 配置
+     * @name V1UsersMcpUpstreamsUpdate
+     * @summary 更新当前用户的 MCP Upstream
+     * @request PUT:/api/v1/users/mcp/upstreams/{id}
+     * @secure
+     */
+    v1UsersMcpUpstreamsUpdate: (id: string, req: DomainUpdateUserMCPUpstreamReq, params: RequestParams = {}) =>
+      this.request<GithubComGoYokoWebResp, GithubComGoYokoWebResp>({
+        path: `/api/v1/users/mcp/upstreams/${id}`,
+        method: "PUT",
+        body: req,
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 删除当前登录用户指定的 MCP Upstream
+     *
+     * @tags 【用户】MCP 配置
+     * @name V1UsersMcpUpstreamsDelete
+     * @summary 删除当前用户的 MCP Upstream
+     * @request DELETE:/api/v1/users/mcp/upstreams/{id}
+     * @secure
+     */
+    v1UsersMcpUpstreamsDelete: (id: string, params: RequestParams = {}) =>
+      this.request<GithubComGoYokoWebResp, GithubComGoYokoWebResp>({
+        path: `/api/v1/users/mcp/upstreams/${id}`,
+        method: "DELETE",
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 触发当前登录用户指定 MCP Upstream 的工具同步
+     *
+     * @tags 【用户】MCP 配置
+     * @name V1UsersMcpUpstreamsSyncCreate
+     * @summary 同步当前用户的 MCP Upstream
+     * @request POST:/api/v1/users/mcp/upstreams/{id}/sync
+     * @secure
+     */
+    v1UsersMcpUpstreamsSyncCreate: (id: string, params: RequestParams = {}) =>
+      this.request<GithubComGoYokoWebResp, GithubComGoYokoWebResp>({
+        path: `/api/v1/users/mcp/upstreams/${id}/sync`,
+        method: "POST",
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 获取当前用户所在团队的普通成员列表
      *
      * @tags 【用户】用户
      * @name V1UsersMembersList
@@ -4512,10 +5169,10 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
      */
     v1UsersMembersList: (params: RequestParams = {}) =>
       this.request<
-        GitInChaitinNetGoDevWebResp & {
+        GithubComGoYokoWebResp & {
           data?: DomainUser[];
         },
-        GitInChaitinNetGoDevWebResp
+        GithubComGoYokoWebResp
       >({
         path: `/api/v1/users/members`,
         method: "GET",
@@ -4584,7 +5241,7 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
-     * @description 根据用户会员等级返回可用模型列表，Basic 用户返回基础可用模型，Pro 用户返回基础和专业模型及定价
+     * @description 获取模型列表及定价，模型等级仅用于选择每日模型额度池
      *
      * @tags 【用户】会员
      * @name V1UsersModelsAvailableList
@@ -4970,7 +5627,7 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
-     * @description 百智云支付回调，验证签名后充值点数
+     * @description 百智云支付回调，验证签名后充值积分
      *
      * @tags 【用户】钱包
      * @name V1UsersPayNotifyList
@@ -5347,6 +6004,25 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
+     * @description 删除问题
+     *
+     * @tags 【用户】项目管理
+     * @name V1UsersProjectsIssuesDelete
+     * @summary 删除问题
+     * @request DELETE:/api/v1/users/projects/{id}/issues/{issue_id}
+     * @secure
+     */
+    v1UsersProjectsIssuesDelete: (id: string, issueId: string, params: RequestParams = {}) =>
+      this.request<GithubComGoYokoWebResp, GithubComGoYokoWebResp>({
+        path: `/api/v1/users/projects/${id}/issues/${issueId}`,
+        method: "DELETE",
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
      * @description 问题评论列表
      *
      * @tags 【用户】项目管理
@@ -5572,7 +6248,7 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
-     * @description 查询当前会员状态和到期时间
+     * @description 开源版固定返回基础订阅状态
      *
      * @tags 【用户】会员
      * @name V1UsersSubscriptionList
@@ -5582,10 +6258,10 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
      */
     v1UsersSubscriptionList: (params: RequestParams = {}) =>
       this.request<
-        GitInChaitinNetGoDevWebResp & {
+        GithubComGoYokoWebResp & {
           data?: DomainSubscriptionResp;
         },
-        GitInChaitinNetGoDevWebResp
+        GithubComGoYokoWebResp
       >({
         path: `/api/v1/users/subscription`,
         method: "GET",
@@ -5596,7 +6272,27 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
-     * @description 设置专业版自动续费开关
+     * @description 会员购买请使用钱包充值下单接口，本接口不再作为购买入口
+     *
+     * @tags 【用户】会员
+     * @name V1UsersSubscriptionCreate
+     * @summary 购买会员
+     * @request POST:/api/v1/users/subscription
+     * @secure
+     */
+    v1UsersSubscriptionCreate: (req: DomainSubscribeReq, params: RequestParams = {}) =>
+      this.request<GitInChaitinNetGoDevWebResp, GitInChaitinNetGoDevWebResp>({
+        path: `/api/v1/users/subscription`,
+        method: "POST",
+        body: req,
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 设置专业会员自动续费开关
      *
      * @tags 【用户】会员
      * @name V1UsersSubscriptionAutoRenewUpdate
@@ -5616,18 +6312,19 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
-     * @description 消耗 10000 点兑换 1 个月专业版会员
+     * @description 关闭后，基础/专业/旗舰模型当日免费 Tokens 耗尽时不再消耗积分
      *
      * @tags 【用户】会员
-     * @name V1UsersSubscriptionProCreate
-     * @summary 兑换专业版
-     * @request POST:/api/v1/users/subscription/pro
+     * @name V1UsersSubscriptionCreditConsumptionUpdate
+     * @summary 开关免费额度耗尽后的积分消费
+     * @request PUT:/api/v1/users/subscription/credit-consumption
      * @secure
      */
-    v1UsersSubscriptionProCreate: (params: RequestParams = {}) =>
+    v1UsersSubscriptionCreditConsumptionUpdate: (req: DomainCreditConsumptionReq, params: RequestParams = {}) =>
       this.request<GitInChaitinNetGoDevWebResp, GitInChaitinNetGoDevWebResp>({
-        path: `/api/v1/users/subscription/pro`,
-        method: "POST",
+        path: `/api/v1/users/subscription/credit-consumption`,
+        method: "PUT",
+        body: req,
         secure: true,
         type: ContentType.Json,
         format: "json",
@@ -5675,7 +6372,7 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
-     * @description 创建任务
+     * @description 创建任务 `attachments` 为可选附件列表，最多 10 个；每项包含 `url` 和 `filename`，URL 需要匹配后端配置的附件白名单前缀。创建任务后，首轮 user-input 日志会按 `{ "content": "base64文本", "attachments": [] }` 结构返回。
      *
      * @tags 【用户】任务管理
      * @name V1UsersTasksCreate
@@ -5700,7 +6397,7 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
-     * @description 数据格式约定：当前仅支持文本帧透传。服务端将 Agent 的原始文本数据包装为如下结构返回给前端（对应 domain.TaskStream）： ```json { "type": "string", "data": "string", "kind": "string", "timestamp": 0 } ``` 独立于 stream 的长生命周期 WebSocket 连接，用于处理 call/call-response（文件浏览、diff 查看等同步请求）。 task 结束后连接不断开，仍可用于文件操作。 支持同一 taskID 多 tab 并发连接。 ## 上行消息 ### Type=call, Kind=repo_file_diff — 获取文件 diff 请求 Data: ```json {"request_id":"string","path":"string","unified":true,"context_lines":3} ``` 响应 Data: ```json {"request_id":"string","path":"string","diff":"string","success":true,"error":"string?"} ``` ### Type=call, Kind=repo_file_list — 列出目录文件 请求 Data: ```json {"request_id":"string","path":"string","glob_pattern":"string?","include_hidden":false} ``` 响应 Data: ```json {"request_id":"string","path":"string","files":[{"name":"string","path":"string","entry_mode":0,"size":0,"modified_at":0}],"success":true,"error":"string?"} ``` ### Type=call, Kind=repo_read_file — 读取文件内容 请求 Data: ```json {"request_id":"string","path":"string","offset":0,"length":0} ``` 响应 Data: ```json {"request_id":"string","path":"string","content":"bytes","total_size":0,"offset":0,"length":0,"is_truncated":false,"success":true,"error":"string?"} ``` ### Type=call, Kind=repo_file_changes — 查询变更文件列表 请求 Data: ```json {"request_id":"string"} ``` 响应 Data: ```json {"request_id":"string","changes":[{"path":"string","status":"string","additions":0,"deletions":0,"old_path":"string?"}],"branch":"string?","commit_hash":"string?","success":true,"error":"string?"} ``` ### Type=call, Kind=port_forward_list — 获取端口转发列表 请求 Data: 无需额外字段 响应 Data: ```json [{"port":0,"status":"string","process":"string","forward_id":"string?","access_url":"string?","label":"string?","error_message":"string?","whitelist_ips":["string"]}] ``` ### Type=call, Kind=restart — 重启任务（无 call-response 返回） 请求 Data: ```json {"request_id":"string?","load_session":true} ``` ### Type=sync-my-ip — 同步 Web 客户端真实 IP 请求 Data: ```json {"client_ip":"string"} ``` ## 下行消息 - Type=call-response: 同步请求响应（Kind 与请求一致，restart 除外）。失败时 Data 为: ```json {"error":"string"} ``` - Type=task-event: 任务事件（从 TaskLive 订阅转发） - Type=ping: 心跳（无 Data）
+     * @description 数据格式约定：当前仅支持文本帧透传。服务端将 Agent 的原始文本数据包装为如下结构返回给前端（对应 domain.TaskStream）： ```json { "type": "string", "data": "string", "kind": "string", "timestamp": 0 } ``` 独立于 stream 的长生命周期 WebSocket 连接，用于处理 call/call-response（文件浏览、diff 查看等同步请求）。 task 结束后连接不断开，仍可用于文件操作。 支持同一 taskID 多 tab 并发连接。 ## 上行消息 ### Type=call, Kind=repo_file_diff — 获取文件 diff 请求 Data: ```json {"request_id":"string","path":"string","unified":true,"context_lines":3} ``` 响应 Data: ```json {"request_id":"string","path":"string","diff":"string","success":true,"error":"string?"} ``` ### Type=call, Kind=repo_file_list — 列出目录文件 请求 Data: ```json {"request_id":"string","path":"string","glob_pattern":"string?","include_hidden":false} ``` 响应 Data: ```json {"request_id":"string","path":"string","files":[{"name":"string","path":"string","entry_mode":0,"size":0,"modified_at":0}],"success":true,"error":"string?"} ``` ### Type=call, Kind=repo_read_file — 读取文件内容 请求 Data: ```json {"request_id":"string","path":"string","offset":0,"length":0} ``` 响应 Data: ```json {"request_id":"string","path":"string","content":"bytes","total_size":0,"offset":0,"length":0,"is_truncated":false,"success":true,"error":"string?"} ``` ### Type=call, Kind=repo_file_changes — 查询变更文件列表 请求 Data: ```json {"request_id":"string"} ``` 响应 Data: ```json {"request_id":"string","changes":[{"path":"string","status":"string","additions":0,"deletions":0,"old_path":"string?"}],"branch":"string?","commit_hash":"string?","success":true,"error":"string?"} ``` ### Type=call, Kind=port_forward_list — 获取端口转发列表 请求 Data: ```json {"request_id":"string"} ``` 响应 Data: ```json {"request_id":"string","ports":[{"port":0,"status":"string","process":"string","forward_id":"string?","access_url":"string?","label":"string?","error_message":"string?","whitelist_ips":["string"]}]} ``` ### Type=call, Kind=restart — 重启任务 请求 Data: ```json {"request_id":"string","load_session":true} ``` 响应 Data: ```json {"id":"uuid","request_id":"string?","success":true,"message":"string","session_id":"string"} ``` ### Type=call, Kind=switch_model — 切换运行中任务模型 请求 Data: ```json {"request_id":"string","model_id":"uuid","load_session":true} ``` 响应 Data: ```json {"id":"uuid","request_id":"string?","success":true,"message":"string","session_id":"string","model":{}} ``` ### Type=sync-my-ip — 同步 Web 客户端真实 IP 请求 Data: ```json {"client_ip":"string"} ``` ## 下行消息 - Type=call-response: 同步请求响应（Kind 与请求一致）。失败时 Data 为: ```json {"request_id":"string","success":false,"error":"string"} ``` - Type=task-event: 任务事件（从 TaskLive 订阅转发） - Type=ping: 心跳（无 Data）
      *
      * @tags 【用户】任务管理
      * @name V1UsersTasksControlList
@@ -5752,11 +6449,11 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
-     * @description 根据 cursor 向前翻页查询任务的历史论次。limit 为论次数（非条目数）， limit=2 表示返回 2 论的完整消息。返回的 chunks 按时间倒序排列（最新在前）。
+     * @description 根据 cursor 向前翻页查询任务的历史轮次。limit 为轮次数（非条目数）， limit=2 表示返回 2 轮的完整消息。返回的 chunks 按时间倒序排列（最新在前）。 返回的 user-input.data 统一为 JSON payload 字符串，例如 `{"content":"57un57ut5aSE55CG","attachments":[]}`；content 为用户输入文本的 base64 编码，旧历史裸文本也会按该结构包装返回。
      *
      * @tags 【用户】任务管理
      * @name V1UsersTasksRoundsList
-     * @summary 查询任务历史论次
+     * @summary 查询任务历史轮次
      * @request GET:/api/v1/users/tasks/rounds
      * @secure
      */
@@ -5764,9 +6461,9 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       query: {
         /** 任务 ID */
         id: string;
-        /** 游标（时间戳 Unix ns） */
+        /** 分页游标 */
         cursor?: string;
-        /** 论次数（默认 2，上限 10） */
+        /** 轮次数（默认 2，上限 10） */
         limit?: number;
       },
       params: RequestParams = {},
@@ -5827,7 +6524,7 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
-     * @description 功能定位：该接口通过 WebSocket 仅做 Agent ↔ 前端 的数据代理与转发，不进行任何包体解析或改写。所有数据以原始格式透传并存储。 数据格式约定：当前仅支持文本帧透传。服务端将 Agent 的原始文本数据包装为如下结构返回给前端（对应 domain.TaskStream）： ```json { "type": "string", "data": "string", "kind": "string", "timestamp": 0 } ``` type 字段说明： - task-started: 本轮任务启动 - task-ended: 本轮任务结束 - task-error: 本轮任务发生错误 - task-running: 任务正在运行 - task-event: 任务临时事件, 不持久化 - file-change: 文件变动事件 - permission-resp: 用户的权限响应 - auto-approve: 开启自动批准 - disable-auto-approve: 关闭自动批准 - user-input: 用户输入 - user-cancel: 取消当前操作，不会终止任务 - reply-question: 回复 AI 的提问 - cursor: 历史游标，用于通过 /rounds 接口加载更早的论次 cursor 消息结构： ```json { "type": "cursor", "data": { "cursor": "<lastTaskStartedTS_ns>", "has_more": true }, "timestamp": 0 } ``` - cursor: 当前论次 task-started 的时间戳（Unix 纳秒），作为 GET /rounds 接口的 cursor 参数向前翻页 - has_more: 是否存在更早的论次。为 false 时表示当前论次即为第一论次，无需再翻页
+     * @description 功能定位：该接口通过 WebSocket 转发任务运行数据。任务对话继续输入使用 `type=user-input`。 数据格式约定：当前仅支持文本帧透传。服务端将 Agent 的原始文本数据包装为如下结构返回给前端（对应 domain.TaskStream）： ```json { "type": "string", "data": "string", "kind": "string", "timestamp": 0 } ``` user-input 上行新格式： ```json { "type": "user-input", "data": "{\"content\":\"57un57ut5aSE55CG6L+Z5Liq6Zeu6aKY\",\"attachments\":[{\"url\":\"https://example-bucket.oss-cn-hangzhou.aliyuncs.com/temp/a.txt\",\"filename\":\"a.txt\"}]}" } ``` user-input 上行旧格式仍兼容： ```json { "type": "user-input", "data": "继续处理这个问题" } ``` user-input 下行和历史返回统一使用新 JSON payload 字符串： ```json { "type": "user-input", "data": "{\"content\":\"57un57ut5aSE55CG6L+Z5Liq6Zeu6aKY\",\"attachments\":[]}", "timestamp": 0 } ``` `attachments` 为可选附件列表，最多 10 个；每项包含 `url` 和 `filename`，URL 需要匹配后端配置的附件白名单前缀。 type 字段说明： - task-started: 本轮任务启动 - task-ended: 本轮任务结束 - task-error: 本轮任务发生错误 - task-running: 任务正在运行 - task-event: 任务临时事件, 不持久化 - file-change: 文件变动事件 - permission-resp: 用户的权限响应 - auto-approve: 开启自动批准 - disable-auto-approve: 关闭自动批准 - user-input: 用户输入 - user-cancel: 取消当前操作，不会终止任务 - reply-question: 回复 AI 的提问 - cursor: 历史游标，用于通过 /rounds 接口加载更早的轮次 cursor 消息结构： ```json { "type": "cursor", "data": { "cursor": "<nextCursor>", "has_more": true }, "timestamp": 0 } ``` - cursor: 当前分页游标，作为 GET /rounds 接口的 cursor 参数向前翻页 - has_more: 是否存在更早的轮次。为 false 时表示当前轮次即为第一轮，无需再翻页
      *
      * @tags 【用户】任务管理
      * @name V1UsersTasksStreamList
@@ -5839,7 +6536,7 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       query: {
         /** 任务 ID */
         id: string;
-        /** 模式：new(等待用户输入)|attach(仅拉取当前论次)，默认 new */
+        /** 模式：new(等待用户输入)|attach(仅拉取当前轮次)，默认 new */
         mode?: string;
       },
       params: RequestParams = {},
@@ -5872,6 +6569,26 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       >({
         path: `/api/v1/users/tasks/${id}`,
         method: "GET",
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 更新任务信息（如标题）
+     *
+     * @tags 【用户】任务管理
+     * @name V1UsersTasksUpdate
+     * @summary 更新任务
+     * @request PUT:/api/v1/users/tasks/{id}
+     * @secure
+     */
+    v1UsersTasksUpdate: (id: string, param: DomainUpdateTaskReq, params: RequestParams = {}) =>
+      this.request<GithubComGoYokoWebResp, GithubComGoYokoWebResp>({
+        path: `/api/v1/users/tasks/${id}`,
+        method: "PUT",
+        body: param,
         secure: true,
         type: ContentType.Json,
         format: "json",
@@ -5922,6 +6639,54 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
+     * @description 查询当天是否已签到
+     *
+     * @tags 【用户】钱包
+     * @name V1UsersWalletCheckinList
+     * @summary 查询签到状态
+     * @request GET:/api/v1/users/wallet/checkin
+     * @secure
+     */
+    v1UsersWalletCheckinList: (params: RequestParams = {}) =>
+      this.request<
+        GitInChaitinNetGoDevWebResp & {
+          data?: DomainCheckInResp;
+        },
+        GitInChaitinNetGoDevWebResp
+      >({
+        path: `/api/v1/users/wallet/checkin`,
+        method: "GET",
+        secure: true,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 每日签到领取积分奖励，每天只能签到一次
+     *
+     * @tags 【用户】钱包
+     * @name V1UsersWalletCheckinCreate
+     * @summary 每日签到
+     * @request POST:/api/v1/users/wallet/checkin
+     * @secure
+     */
+    v1UsersWalletCheckinCreate: (req: DomainCheckInReq, params: RequestParams = {}) =>
+      this.request<
+        GitInChaitinNetGoDevWebResp & {
+          data?: DomainCheckInResp;
+        },
+        GitInChaitinNetGoDevWebResp
+      >({
+        path: `/api/v1/users/wallet/checkin`,
+        method: "POST",
+        body: req,
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
      * @description 兑现兑换码
      *
      * @tags 【用户】钱包
@@ -5942,11 +6707,11 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
-     * @description 充值点数
+     * @description 会员订阅 / 积分充值
      *
      * @tags 【用户】钱包
      * @name V1UsersWalletRechargeCreate
-     * @summary 充值点数
+     * @summary 会员订阅 / 积分充值
      * @request POST:/api/v1/users/wallet/recharge
      * @secure
      */
@@ -6001,6 +6766,49 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
         path: `/api/v1/users/wallet/transaction`,
         method: "GET",
         query: query,
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 解除当前用户与微信公众号 OpenID 的绑定关系
+     *
+     * @tags 【用户】微信公众号推送
+     * @name V1UsersWechatMpBindDelete
+     * @summary 解除公众号绑定
+     * @request DELETE:/api/v1/users/wechat-mp/bind
+     * @secure
+     */
+    v1UsersWechatMpBindDelete: (params: RequestParams = {}) =>
+      this.request<GithubComGoYokoWebResp, GithubComGoYokoWebResp>({
+        path: `/api/v1/users/wechat-mp/bind`,
+        method: "DELETE",
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * @description 为当前登录用户创建微信公众号绑定临时二维码，用户扫码关注/扫码后完成绑定
+     *
+     * @tags 【用户】微信公众号推送
+     * @name V1UsersWechatMpBindQrcodeCreate
+     * @summary 创建公众号绑定二维码
+     * @request POST:/api/v1/users/wechat-mp/bind-qrcode
+     * @secure
+     */
+    v1UsersWechatMpBindQrcodeCreate: (params: RequestParams = {}) =>
+      this.request<
+        GithubComGoYokoWebResp & {
+          data?: DomainBindQRCodeResp;
+        },
+        GithubComGoYokoWebResp
+      >({
+        path: `/api/v1/users/wechat-mp/bind-qrcode`,
+        method: "POST",
         secure: true,
         type: ContentType.Json,
         format: "json",

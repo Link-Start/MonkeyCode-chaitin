@@ -1,5 +1,7 @@
-import { ConstsTaskStatus, type DomainProjectTask, type DomainVMPort, TaskflowVirtualMachineStatus } from "@/api/Api"
+import { ConstsOwnerType, ConstsTaskStatus, type DomainModel, type DomainProjectTask, type DomainVMPort } from "@/api/Api"
 import { useBreadcrumbTask } from "@/components/console/breadcrumb-task-context"
+import { useCommonData } from "@/components/console/data-provider"
+import { PlanStepsBlock } from "@/components/console/task/chat-panel"
 import { TaskChatInputBox } from "@/components/console/task/chat-inputbox"
 import { TaskControlClient } from "@/components/console/task/task-control-client"
 import { TaskMessageHandler, type TaskMessageHandlerStatus } from "@/components/console/task/task-message-handler"
@@ -7,40 +9,84 @@ import { MessageItem, type MessageType } from "@/components/console/task/message
 import { TaskPreparingView, useShouldShowPreparing } from "@/components/console/task/task-preparing-dialog"
 import { TaskFileExplorer } from "@/components/console/task/task-file-explorer"
 import { TaskPreviewPanel } from "@/components/console/task/task-preview-panel"
-import type { AvailableCommands } from "@/components/console/task/task-shared"
-import { TaskStreamClient, type TaskStreamClientState, type TaskStreamConnectionState } from "@/components/console/task/task-stream-client"
+import type { AvailableCommands, TaskPlan, TaskStreamStatus, TaskUserInput } from "@/components/console/task/task-shared"
+import { TaskStreamClient, type TaskStreamClientState, type TaskStreamCloseReason, type TaskStreamConnectionState } from "@/components/console/task/task-stream-client"
 import { TaskTerminalPanel } from "@/components/console/task/task-terminal-panel"
+import { IS_OFFLINE_EDITION } from "@/utils/edition"
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { CircularProgress } from "@/components/ui/circular-progress"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Spinner } from "@/components/ui/spinner"
+import Icon from "@/components/common/Icon"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
-import { formatTokens } from "@/utils/common"
+import { canUseModelBySubscription, formatTokens, getBrandFromModel, getBuiltinModelName, getModelDisplayName, getOwnerTypeBadge, getTaskDisplayName, isBuiltinPublicModelPackage, stripBuiltinPublicModelPackagePrefix } from "@/utils/common"
 import { apiRequest } from "@/utils/requestUtils"
-import { IconArrowDown, IconArrowUp, IconDeviceDesktop, IconFile, IconHistory, IconReload, IconTerminal2 } from "@tabler/icons-react"
+import { IconArrowDown, IconArrowUp, IconChevronDown, IconDeviceDesktop, IconFile, IconHistory, IconReload, IconTerminal2 } from "@tabler/icons-react"
 import React from "react"
 import { useParams } from "react-router-dom"
 import { toast } from "sonner"
-import { Badge } from "@/components/ui/badge"
 
 type SidePanelType = "files"
 type AskUserQuestionStatus = "pending" | "queued" | "submitting" | "completed" | "expired"
+
+const BUILTIN_TASK_MODEL_OPTIONS = [
+  { model: "monkeycode-basic", label: "基础模型", badge: "免费使用", badgeVariant: "default" as const, iconName: "gift" },
+  { model: "monkeycode-pro", label: "专业模型", badge: "专业会员可免费使用", badgeVariant: "secondary" as const, iconName: "vip-1" },
+  { model: "monkeycode-ultra", label: "旗舰模型", badge: "旗舰会员可免费使用", badgeVariant: "secondary" as const, iconName: "vip-2" },
+] as const
+const OPEN_WALLET_DIALOG_EVENT = "open-wallet-dialog"
 type MessageSource = "live" | "history"
+const MODEL_SWITCH_MIN_CREATED_AT = 1777381200 // 2026-04-28 21:00:00 +08:00
 
 export default function TaskDetailPage() {
   const { taskId } = useParams()
   const { setTaskName } = useBreadcrumbTask() ?? {}
+  const { models, loadingModels, subscription } = useCommonData()
+  const isMobile = useIsMobile()
   const [task, setTask] = React.useState<DomainProjectTask | null>(null)
   const [activeSidePanel, setActiveSidePanel] = React.useState<SidePanelType | null>(null)
   const [terminalPanelOpen, setTerminalPanelOpen] = React.useState(false)
   const [previewDialogOpen, setPreviewDialogOpen] = React.useState(false)
   const [streamStatus, setStreamStatus] = React.useState<TaskMessageHandlerStatus>("inited")
   const [availableCommands, setAvailableCommands] = React.useState<AvailableCommands | null>(null)
+  const [plan, setPlan] = React.useState<TaskPlan>({
+    entries: [],
+    version: 0,
+  })
+  const [contextUsage, setContextUsage] = React.useState<{ size: number | null; used: number | null }>({
+    size: null,
+    used: null,
+  })
   const [sending, setSending] = React.useState(false)
   const [rawHistoryMessages, setRawHistoryMessages] = React.useState<MessageType[]>([])
   const [rawLiveMessages, setRawLiveMessages] = React.useState<MessageType[]>([])
   const [streamConnectionState, setStreamConnectionState] = React.useState<TaskStreamConnectionState>("closed")
+  const [streamCloseReason, setStreamCloseReason] = React.useState<TaskStreamCloseReason | null>(null)
   const [queuedReplyIds, setQueuedReplyIds] = React.useState<string[]>([])
   const [submittingReplyIds, setSubmittingReplyIds] = React.useState<string[]>([])
   const [fileChangesCount, setFileChangesCount] = React.useState(0)
@@ -51,22 +97,37 @@ export default function TaskDetailPage() {
   const [historyLoading, setHistoryLoading] = React.useState(false)
   const [historyCursorReady, setHistoryCursorReady] = React.useState(false)
   const [previewPorts, setPreviewPorts] = React.useState<DomainVMPort[] | undefined>(undefined)
+  const [contextUsagePopoverOpen, setContextUsagePopoverOpen] = React.useState(false)
+  const [openModelGroupKey, setOpenModelGroupKey] = React.useState<string>()
+  const [resetContextDialogOpen, setResetContextDialogOpen] = React.useState(false)
+  const [resetContextSubmitting, setResetContextSubmitting] = React.useState(false)
+  const [restartAgentDialogOpen, setRestartAgentDialogOpen] = React.useState(false)
+  const [restartAgentSubmitting, setRestartAgentSubmitting] = React.useState(false)
+  const [restartAgentClearContext, setRestartAgentClearContext] = React.useState(false)
+  const [modelSwitchDialogOpen, setModelSwitchDialogOpen] = React.useState(false)
+  const [modelSwitchSubmitting, setModelSwitchSubmitting] = React.useState(false)
+  const [pendingSwitchModel, setPendingSwitchModel] = React.useState<DomainModel | null>(null)
   const [chatHasOverflow, setChatHasOverflow] = React.useState(false)
   const [chatAtTop, setChatAtTop] = React.useState(true)
   const [chatAtBottom, setChatAtBottom] = React.useState(true)
   const taskControlClientRef = React.useRef<TaskControlClient | null>(null)
   const streamClientRef = React.useRef<TaskStreamClient | null>(null)
   const historyLoadingRef = React.useRef(false)
+  const chatScrollRootRef = React.useRef<HTMLDivElement | null>(null)
   const historyLoadedRef = React.useRef(false)
   const chatScrollRef = React.useRef<HTMLDivElement | null>(null)
   const chatContentRef = React.useRef<HTMLDivElement | null>(null)
   const autoScrollFrameRef = React.useRef<number | null>(null)
+  const autoScrollLockTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const autoScrollIntentLockedRef = React.useRef(false)
+  const shouldAutoScrollChatRef = React.useRef(true)
+  const previousLiveUserInputIdRef = React.useRef<string | null>(null)
+  const previousLiveEndedCycleIdRef = React.useRef<string | null>(null)
   const previousRunningMessagesSignatureRef = React.useRef<string | null>(null)
   const activeSidePanelRef = React.useRef<SidePanelType | null>(null)
   const previewDialogOpenRef = React.useRef(false)
   const showPreparing = useShouldShowPreparing(task)
-  const vmOnline = task?.virtualmachine?.status === TaskflowVirtualMachineStatus.VirtualMachineStatusOnline
-    || task?.virtualmachine?.status === TaskflowVirtualMachineStatus.VirtualMachineStatusHibernated
+  const taskInteractive = task?.status === ConstsTaskStatus.TaskStatusProcessing
   const envid = task?.virtualmachine?.id
   const cancelledRef = React.useRef(false)
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -123,7 +184,10 @@ export default function TaskDetailPage() {
   }, [queuedReplyIdSet, streamConnectionState, submittingReplyIdSet])
   const historyMessages = React.useMemo(() => decorateMessages(rawHistoryMessages, "history"), [decorateMessages, rawHistoryMessages])
   const liveMessages = React.useMemo(() => decorateMessages(rawLiveMessages, "live"), [decorateMessages, rawLiveMessages])
-  const messages = React.useMemo(() => [...historyMessages, ...liveMessages], [historyMessages, liveMessages])
+  const handleReloadSession = React.useCallback(async () => {
+    const success = await taskControlClientRef.current?.restart(true)
+    return !!success
+  }, [])
   const runningMessagesSignature = React.useMemo(() => JSON.stringify(
     liveMessages
       .filter((message) => (
@@ -143,12 +207,105 @@ export default function TaskDetailPage() {
         questions: message.data.questions ?? null,
       })),
   ), [liveMessages])
+  const latestLiveUserInputId = React.useMemo(() => {
+    for (let index = liveMessages.length - 1; index >= 0; index -= 1) {
+      const message = liveMessages[index]
+      if (message.type === "user_input") {
+        return message.id
+      }
+    }
+    return null
+  }, [liveMessages])
+  const latestCompletedLiveCycleId = React.useMemo(() => {
+    if (!latestLiveUserInputId) {
+      return null
+    }
+    if (streamStatus === "finished" || streamCloseReason === "task_ended") {
+      return latestLiveUserInputId
+    }
+    return null
+  }, [latestLiveUserInputId, streamCloseReason, streamStatus])
   const [timeCost, setTimeCost] = React.useState(0)
   const previewPortCount = (previewPorts ?? []).length
   const totalTokens = task?.stats?.total_tokens ?? ((task?.stats?.input_tokens ?? 0) + (task?.stats?.output_tokens ?? 0))
+  const hasContextUsage = contextUsage.size !== null || contextUsage.used !== null
+  const canInput = taskInteractive && !sending && streamStatus !== "connected" && streamStatus !== "inited"
+  const canSwitchModel = canInput && (task?.created_at ? task.created_at >= MODEL_SWITCH_MIN_CREATED_AT : true)
+  const planStreamStatus: TaskStreamStatus = streamStatus === "connected" ? "executing" : streamStatus
+  const contextProgress = contextUsage.size && contextUsage.size > 0
+    ? Math.min(Math.max((contextUsage.used ?? 0) / contextUsage.size, 0), 1)
+    : 0
+  const contextProgressClassName = contextProgress >= 0.8
+    ? "text-danger"
+    : contextProgress >= 0.6
+      ? "text-warning"
+      : "text-foreground"
+  const contextUsagePercent = `${(contextProgress * 100).toFixed(1)}%`
 
   const hasSidePanel = activeSidePanel !== null
   const hasBottomTerminal = terminalPanelOpen
+  const currentModelId = task?.model?.id ?? ""
+  const currentModelName = task?.model?.model ?? ""
+  const currentModel = task?.model
+  const supportedModels = React.useMemo(
+    () => models.filter((model) => model.id || model.model),
+    [models]
+  )
+  const modelGroups = React.useMemo(() => {
+    const builtinModelGroups = IS_OFFLINE_EDITION
+      ? []
+      : BUILTIN_TASK_MODEL_OPTIONS.map((option) => ({
+        key: option.model,
+        label: option.label,
+        badge: option.badge,
+        badgeVariant: option.badgeVariant,
+        iconName: option.iconName,
+        models: supportedModels.filter((model) => getBuiltinModelName(model.model) === option.model),
+      }))
+    const privateModels = supportedModels.filter((model) => (
+      model.owner?.type === ConstsOwnerType.OwnerTypePrivate
+      && !getBuiltinModelName(model.model)
+    ))
+    const paidModels = supportedModels.filter((model) => (
+      model.owner?.type === ConstsOwnerType.OwnerTypePublic
+      && !isBuiltinPublicModelPackage(model.model)
+    ))
+    const teamModelGroups = Array.from(
+      supportedModels
+        .filter((model) => (
+          model.owner?.type === ConstsOwnerType.OwnerTypeTeam
+          && !getBuiltinModelName(model.model)
+        ))
+        .reduce((groups, model) => {
+          const teamName = model.owner?.name || "团队模型"
+          const teamId = model.owner?.id || teamName
+          const groupKey = `${teamId}:${teamName}`
+          const group = groups.get(groupKey) || { key: groupKey, label: teamName, iconName: "team", models: [] as DomainModel[] }
+          group.models.push(model)
+          groups.set(groupKey, group)
+          return groups
+        }, new Map<string, { key: string; label: string; iconName: string; models: DomainModel[] }>())
+        .values()
+    )
+
+    return [
+      ...builtinModelGroups,
+      {
+        key: "paid-models",
+        label: "付费模型",
+        badge: "消耗积分使用",
+        iconName: "qiandaizi",
+        models: paidModels,
+      },
+      {
+        key: "private-models",
+        label: "我的模型",
+        iconName: "a-AIshezhi",
+        models: privateModels,
+      },
+      ...teamModelGroups,
+    ].filter((group) => group.models.length > 0)
+  }, [supportedModels])
 
   const toggleSidePanel = (panel: SidePanelType) => {
     setActiveSidePanel((prev) => (prev === panel ? null : panel))
@@ -181,92 +338,124 @@ export default function TaskDetailPage() {
     taskControlClientRef.current = null
   }, [])
 
-  const connectStreamClient = React.useCallback((mode: "attach" | "new", userInput?: string) => {
-    if (!taskId) return
+  const connectStreamClient = React.useCallback((mode: "attach" | "new", userInput?: TaskUserInput) => {
+    if (!taskId) return Promise.resolve(false)
 
-    const previousState = disconnectStreamClient()
-    const previousMessages = previousState?.messages ?? rawLiveMessages
-    if (mode === "new" && previousMessages.length > 0) {
-      setRawHistoryMessages((prev) => [...prev, ...previousMessages])
-      setRawLiveMessages([])
-    }
+    return new Promise<boolean>((resolve) => {
+      let settled = false
+      const finish = (result: boolean) => {
+        if (settled) return
+        settled = true
+        resolve(result)
+      }
 
-    setAvailableCommands(null)
-    setStreamStatus("inited")
-    setStreamConnectionState("connecting")
-    setQueuedReplyIds([])
-    setSubmittingReplyIds([])
-    setSending(mode === "new")
-    setTimeCost(0)
+      const previousState = disconnectStreamClient()
+      const previousMessages = previousState?.messages ?? rawLiveMessages
+      if (mode === "new" && previousMessages.length > 0) {
+        setRawHistoryMessages((prev) => [...prev, ...previousMessages])
+        setRawLiveMessages([])
+      }
 
-    const client = mode === "attach"
-      ? TaskStreamClient.attach({
-        taskId,
-        onStateChange: (state: TaskStreamClientState) => {
-          if (streamClientRef.current !== client || cancelledRef.current) return
-          setStreamStatus(state.status)
-          setRawLiveMessages(state.messages)
-          setAvailableCommands(state.availableCommands)
-          setTimeCost(state.executionTimeMs)
-          setStreamConnectionState(state.connectionState)
-          setQueuedReplyIds(state.queuedReplyIds)
-          setSubmittingReplyIds(state.submittingReplyIds)
-          if (!historyLoadedRef.current && state.historyCursor.ready) {
-            setHistoryCursorReady(true)
-            setHistoryCursor(state.historyCursor.cursor)
-            setHistoryHasMore(state.historyCursor.hasMore)
-          }
-        },
-        onOpen: () => {
-          if (streamClientRef.current !== client || cancelledRef.current) return
-          setSending(false)
-        },
-        onClose: () => {
-          if (streamClientRef.current === client) {
-            streamClientRef.current = null
-          }
-          if (!cancelledRef.current) {
-            setSending(false)
-          }
-        },
-        onError: () => {
-          if (streamClientRef.current !== client || cancelledRef.current) return
-          setSending(false)
-        },
+      setAvailableCommands(null)
+      setPlan({
+        entries: [],
+        version: 0,
       })
-      : TaskStreamClient.new({
-      taskId,
-      onStateChange: (state: TaskStreamClientState) => {
-        if (streamClientRef.current !== client || cancelledRef.current) return
-        setStreamStatus(state.status)
-        setRawLiveMessages(state.messages)
-        setAvailableCommands(state.availableCommands)
-        setTimeCost(state.executionTimeMs)
-        setStreamConnectionState(state.connectionState)
-        setQueuedReplyIds(state.queuedReplyIds)
-        setSubmittingReplyIds(state.submittingReplyIds)
-      },
-      onOpen: () => {
-        if (streamClientRef.current !== client || cancelledRef.current) return
-        setSending(false)
-      },
-      onClose: () => {
-        if (streamClientRef.current === client) {
-          streamClientRef.current = null
-        }
-        if (!cancelledRef.current) {
-          setSending(false)
-        }
-      },
-      onError: () => {
-        if (streamClientRef.current !== client || cancelledRef.current) return
-        setSending(false)
-      },
-      userInput: userInput ?? "",
-    })
+      setStreamStatus("inited")
+      setStreamConnectionState("connecting")
+      setStreamCloseReason(null)
+      setQueuedReplyIds([])
+      setSubmittingReplyIds([])
+      setSending(mode === "new")
+      setTimeCost(0)
 
-    streamClientRef.current = client
-    client.connect()
+      const client = mode === "attach"
+        ? TaskStreamClient.attach({
+          taskId,
+          onStateChange: (state: TaskStreamClientState) => {
+            if (streamClientRef.current !== client || cancelledRef.current) return
+            setStreamStatus(state.status)
+            setRawLiveMessages(state.messages)
+            setAvailableCommands(state.availableCommands)
+            setPlan(state.plan)
+            setContextUsage((prev) => ({
+              size: state.contextUsage.size ?? prev.size,
+              used: state.contextUsage.used ?? prev.used,
+            }))
+            setTimeCost(state.executionTimeMs)
+            setStreamConnectionState(state.connectionState)
+            setStreamCloseReason(state.closeReason)
+            setQueuedReplyIds(state.queuedReplyIds)
+            setSubmittingReplyIds(state.submittingReplyIds)
+            if (!historyLoadedRef.current && state.historyCursor.ready) {
+              setHistoryCursorReady(true)
+              setHistoryCursor(state.historyCursor.cursor)
+              setHistoryHasMore(state.historyCursor.hasMore)
+            }
+          },
+          onOpen: () => {
+            if (streamClientRef.current !== client || cancelledRef.current) return
+            setSending(false)
+            finish(true)
+          },
+          onClose: () => {
+            if (streamClientRef.current === client) {
+              streamClientRef.current = null
+            }
+            if (!cancelledRef.current) {
+              setSending(false)
+            }
+            finish(false)
+          },
+          onError: () => {
+            if (streamClientRef.current !== client || cancelledRef.current) return
+            setSending(false)
+            finish(false)
+          },
+        })
+        : TaskStreamClient.new({
+          taskId,
+          onStateChange: (state: TaskStreamClientState) => {
+            if (streamClientRef.current !== client || cancelledRef.current) return
+            setStreamStatus(state.status)
+            setRawLiveMessages(state.messages)
+            setAvailableCommands(state.availableCommands)
+            setPlan(state.plan)
+            setContextUsage((prev) => ({
+              size: state.contextUsage.size ?? prev.size,
+              used: state.contextUsage.used ?? prev.used,
+            }))
+            setTimeCost(state.executionTimeMs)
+            setStreamConnectionState(state.connectionState)
+            setStreamCloseReason(state.closeReason)
+            setQueuedReplyIds(state.queuedReplyIds)
+            setSubmittingReplyIds(state.submittingReplyIds)
+          },
+          onOpen: () => {
+            if (streamClientRef.current !== client || cancelledRef.current) return
+            setSending(false)
+            finish(true)
+          },
+          onClose: () => {
+            if (streamClientRef.current === client) {
+              streamClientRef.current = null
+            }
+            if (!cancelledRef.current) {
+              setSending(false)
+            }
+            finish(false)
+          },
+          onError: () => {
+            if (streamClientRef.current !== client || cancelledRef.current) return
+            setSending(false)
+            finish(false)
+          },
+          userInput: userInput ?? "",
+        })
+
+      streamClientRef.current = client
+      client.connect()
+    })
   }, [disconnectStreamClient, rawLiveMessages, taskId])
 
   // taskId 变化时重置状态
@@ -280,6 +469,10 @@ export default function TaskDetailPage() {
     setPreviewDialogOpen(false)
     setStreamStatus("inited")
     setAvailableCommands(null)
+    setPlan({
+      entries: [],
+      version: 0,
+    })
     setSending(false)
     setRawHistoryMessages([])
     setRawLiveMessages([])
@@ -356,7 +549,7 @@ export default function TaskDetailPage() {
   }, [fetchPortForwards])
 
   React.useEffect(() => {
-    if (!taskId) return
+    if (!taskId || !taskInteractive) return
 
     const client = new TaskControlClient({
       taskId,
@@ -372,16 +565,16 @@ export default function TaskDetailPage() {
       }
       client.dispose()
     }
-  }, [applyRepoFileChange, handlePortChange, taskId])
+  }, [applyRepoFileChange, handlePortChange, taskId, taskInteractive])
 
   const scheduleFetchTaskDetail = React.useCallback(async () => {
     const currentTask = await fetchTaskDetail()
     if (cancelledRef.current) return
-    const vmStatus = currentTask?.virtualmachine?.status
-    let delay = 30000
-    if (vmStatus === TaskflowVirtualMachineStatus.VirtualMachineStatusPending) {
+    const taskStatus = currentTask?.status
+    let delay = 60000
+    if (taskStatus === ConstsTaskStatus.TaskStatusPending) {
       delay = 2000
-    } else if (vmStatus === TaskflowVirtualMachineStatus.VirtualMachineStatusOnline) {
+    } else if (taskStatus === ConstsTaskStatus.TaskStatusProcessing) {
       delay = 10000
     }
     timeoutRef.current = setTimeout(scheduleFetchTaskDetail, delay)
@@ -441,8 +634,7 @@ export default function TaskDetailPage() {
   React.useEffect(() => {
     if (!setTaskName) return
     if (task) {
-      const name = task.summary || task.content
-      setTaskName(name?.trim() || "未知任务名称")
+      setTaskName(getTaskDisplayName(task, "未知任务名称"))
     }
     return () => setTaskName?.(null)
   }, [task, setTaskName])
@@ -451,10 +643,9 @@ export default function TaskDetailPage() {
     if (!taskId || !task) return
     if (streamStatus !== "inited") return
     if (streamClientRef.current) return
-    if (task.status !== ConstsTaskStatus.TaskStatusProcessing) return
-    if (task.virtualmachine?.status === TaskflowVirtualMachineStatus.VirtualMachineStatusPending) return
+    if (!taskInteractive) return
     connectStreamClient("attach")
-  }, [connectStreamClient, streamStatus, task, taskId])
+  }, [connectStreamClient, streamStatus, task, taskId, taskInteractive])
 
   React.useEffect(() => {
     if (!task) return
@@ -470,47 +661,332 @@ export default function TaskDetailPage() {
   }, [fetchTaskRounds, historyLoaded, historyLoading, rawLiveMessages.length, task])
 
   React.useEffect(() => {
-    if (!vmOnline || !previewDialogOpen) return
+    if (!taskInteractive || !previewDialogOpen) return
     fetchPortForwards()
-  }, [fetchPortForwards, previewDialogOpen, vmOnline])
+  }, [fetchPortForwards, previewDialogOpen, taskInteractive])
 
-  const handleSend = React.useCallback((content: string) => {
-    if (!taskId) return
-    connectStreamClient("new", content)
+  const handleSend = React.useCallback((content: TaskUserInput) => {
+    if (!taskId) return Promise.resolve(false)
+    return connectStreamClient("new", content)
   }, [connectStreamClient, taskId])
+  const messages = React.useMemo(() => {
+    const enhanceErrorMessage = (message: MessageType) => {
+      if (message.type !== "error_message") {
+        return message
+      }
+
+      return {
+        ...message,
+        onReloadSession: handleReloadSession,
+        onUserInput: handleSend,
+      }
+    }
+
+    return [...historyMessages, ...liveMessages].map(enhanceErrorMessage)
+  }, [handleReloadSession, handleSend, historyMessages, liveMessages])
+
+  const handleCompactContext = React.useCallback(() => {
+    if (!canInput) return
+    setContextUsagePopoverOpen(false)
+    handleSend("/compact")
+  }, [canInput, handleSend])
+
+  const handleRequestModelSwitch = React.useCallback((model: DomainModel) => {
+    if (!model.id) {
+      toast.error("模型信息无效，无法切换")
+      return
+    }
+
+    if (model.id === currentModelId || (!currentModelId && model.model === currentModelName)) {
+      return
+    }
+
+    setPendingSwitchModel(model)
+    setModelSwitchDialogOpen(true)
+  }, [currentModelId, currentModelName])
+
+  const handleOpenSubscriptionPlan = React.useCallback(() => {
+    window.dispatchEvent(new CustomEvent(OPEN_WALLET_DIALOG_EVENT, {
+      detail: { section: "plan" },
+    }))
+  }, [])
+
+  const getNestedModelDisplayName = React.useCallback((modelName?: string | null) => {
+    const normalizedModelName = modelName?.trim()
+    if (!normalizedModelName) {
+      return ""
+    }
+
+    const builtinModelName = getBuiltinModelName(normalizedModelName)
+    if (!builtinModelName) {
+      return getModelDisplayName(normalizedModelName)
+    }
+
+    const nestedModelName = normalizedModelName.slice(builtinModelName.length).replace(/^\/+/, "")
+    return nestedModelName || getModelDisplayName(normalizedModelName)
+  }, [])
+
+  const getModelOptionDisplayName = React.useCallback((model: DomainModel, nested = false) => {
+    const remark = model.remark?.trim()
+    if (remark) {
+      return stripBuiltinPublicModelPackagePrefix(remark)
+    }
+
+    return nested ? getNestedModelDisplayName(model.model) : getModelDisplayName(model.model)
+  }, [getNestedModelDisplayName])
+
+  const getCurrentModelDisplayName = React.useCallback(() => {
+    const builtinModelName = getBuiltinModelName(currentModelName)
+    const builtinOption = BUILTIN_TASK_MODEL_OPTIONS.find((option) => option.model === builtinModelName)
+    if (builtinOption && currentModel) {
+      const nestedModelName = getModelOptionDisplayName(currentModel, true)
+      return isMobile ? nestedModelName : `${builtinOption.label} / ${nestedModelName}`
+    }
+
+    return currentModel ? getModelOptionDisplayName(currentModel) : getModelDisplayName(currentModelName)
+  }, [currentModel, currentModelName, getModelOptionDisplayName, isMobile])
+
+  const getRecommendedModelBadge = React.useCallback((modelName?: string | null) => {
+    const normalizedModelName = modelName?.trim().toLowerCase()
+    if (!normalizedModelName) {
+      return null
+    }
+
+    const builtinModelName = getBuiltinModelName(normalizedModelName)
+    const nestedModelName = builtinModelName
+      ? normalizedModelName.slice(builtinModelName.length).replace(/^\/+/, "")
+      : normalizedModelName
+
+    if (
+      (builtinModelName === "monkeycode-basic" && nestedModelName === "qwen3.5-plus")
+      || (builtinModelName === "monkeycode-pro" && nestedModelName === "qwen3.6-plus")
+      || (builtinModelName === "monkeycode-ultra" && nestedModelName === "gpt-5.5")
+    ) {
+      return "推荐"
+    }
+
+    return null
+  }, [])
+
+  const renderModelSwitchOption = React.useCallback((model: DomainModel, nested = false, indented = false) => {
+    const modelName = model.model || "未知模型"
+    const isSelected = model.id === currentModelId || (!currentModelId && model.model === currentModelName)
+    const canUseModel = canUseModelBySubscription(model, subscription)
+    const displayName = getModelOptionDisplayName(model, nested)
+    const recommendedBadge = getRecommendedModelBadge(model.model)
+
+    return (
+      <DropdownMenuRadioItem
+        key={model.id || modelName}
+        value={model.id || ""}
+        disabled={!model.id || !canUseModel}
+        onClick={(event) => {
+          if (!canUseModel) {
+            event.preventDefault()
+            handleOpenSubscriptionPlan()
+            return
+          }
+
+          handleRequestModelSwitch(model)
+        }}
+        className={cn(
+          "w-full justify-between gap-3 pr-2 [&>[data-slot=dropdown-menu-radio-item-indicator]]:hidden",
+          indented && "pl-7",
+          isSelected && "bg-primary/10 text-primary",
+        )}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Icon name={getBrandFromModel(model)} className="size-4" />
+          <span className="truncate">{displayName}</span>
+        </div>
+        <div className="ml-auto flex shrink-0 items-center justify-end gap-1.5">
+          {recommendedBadge ? (
+            <Badge variant="secondary" className="shrink-0">{recommendedBadge}</Badge>
+          ) : null}
+          {model.owner?.type !== ConstsOwnerType.OwnerTypePublic && getOwnerTypeBadge(model.owner)}
+        </div>
+      </DropdownMenuRadioItem>
+    )
+  }, [currentModelId, currentModelName, getModelOptionDisplayName, getRecommendedModelBadge, handleOpenSubscriptionPlan, handleRequestModelSwitch, subscription])
+
+  const renderModelSwitchGroupHeader = React.useCallback((group: { key: string; label: string; badge?: string; badgeVariant?: "default" | "secondary"; iconName?: string; models: DomainModel[] }) => (
+    <div key={group.key} className="flex min-w-0 items-center gap-2 px-2 py-1.5 text-xs font-medium text-muted-foreground">
+      {group.iconName ? (
+        <Icon name={group.iconName} className="size-4 shrink-0" />
+      ) : null}
+      <span className="truncate">{group.label}</span>
+      {group.badge ? (
+        <Badge
+          variant={group.badgeVariant || "secondary"}
+          className={cn("shrink-0", group.badgeVariant === "default" && "!text-primary-foreground")}
+        >
+          {group.badge}
+        </Badge>
+      ) : null}
+    </div>
+  ), [])
+
+  const renderModelSwitchGroup = React.useCallback((group: { key: string; label: string; badge?: string; badgeVariant?: "default" | "secondary"; iconName?: string; models: DomainModel[] }) => {
+    const hasAvailableModel = group.models.some((model) => model.id)
+
+    return (
+      <DropdownMenuSub
+        key={group.key}
+        open={openModelGroupKey === group.key}
+        onOpenChange={(open) => {
+          setOpenModelGroupKey((currentKey) => {
+            if (open) {
+              return group.key
+            }
+
+            return currentKey === group.key ? undefined : currentKey
+          })
+        }}
+      >
+        <DropdownMenuSubTrigger className="w-full" disabled={!hasAvailableModel}>
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            {group.iconName ? (
+              <Icon name={group.iconName} className="size-4 shrink-0" />
+            ) : null}
+            <span className="truncate">{group.label}</span>
+            {group.badge ? (
+              <Badge
+                variant={group.badgeVariant || "secondary"}
+                className={cn("shrink-0", group.badgeVariant === "default" && "!text-primary-foreground")}
+              >
+                {group.badge}
+              </Badge>
+            ) : null}
+          </span>
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="max-h-[320px] min-w-[280px] overflow-y-auto">
+          {group.models.map((model) => renderModelSwitchOption(model, Boolean(getBuiltinModelName(model.model))))}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+    )
+  }, [openModelGroupKey, renderModelSwitchOption])
+
+  const handleConfirmModelSwitch = React.useCallback(async () => {
+    const modelId = pendingSwitchModel?.id
+    if (!modelId || !pendingSwitchModel || modelSwitchSubmitting) return
+
+    const nextModel = pendingSwitchModel
+    setModelSwitchSubmitting(true)
+    const response = await taskControlClientRef.current?.switchModel(modelId, true)
+    setModelSwitchSubmitting(false)
+
+    if (!response) {
+      toast.error("切换模型超时，请稍后重试")
+      return
+    }
+
+    if (response.success) {
+      setTask((prev) => prev ? { ...prev, model: nextModel } : prev)
+      setModelSwitchDialogOpen(false)
+      setPendingSwitchModel(null)
+      toast.success(response.message || "模型已切换")
+      return
+    }
+
+    setModelSwitchDialogOpen(false)
+    setPendingSwitchModel(null)
+    toast.error(response.message || "切换模型失败")
+  }, [modelSwitchSubmitting, pendingSwitchModel])
 
   const handleCancel = React.useCallback(() => {
     streamClientRef.current?.sendCancel()
   }, [])
 
-  const handleResetSession = React.useCallback(() => {
-    taskControlClientRef.current?.restart(false)
+  const handleResetSession = React.useCallback(async () => {
+    const success = await taskControlClientRef.current?.restart(false)
+    return !!success
   }, [])
 
-  const handleReloadSession = React.useCallback(() => {
-    taskControlClientRef.current?.restart(true)
-  }, [])
+  const handleConfirmResetContext = React.useCallback(async () => {
+    if (resetContextSubmitting) return
+
+    setResetContextSubmitting(true)
+    const success = await handleResetSession()
+    setResetContextSubmitting(false)
+
+    if (success) {
+      setResetContextDialogOpen(false)
+      setContextUsage((prev) => ({ ...prev, used: 0 }))
+      toast.success("上下文已重置")
+      return
+    }
+
+    toast.error("重置上下文失败")
+  }, [handleResetSession, resetContextSubmitting])
+
+  const handleRequestRestartAgent = React.useCallback((clearContext: boolean) => {
+    if (!canInput) return
+    setRestartAgentClearContext(clearContext)
+    setRestartAgentDialogOpen(true)
+  }, [canInput])
+
+  const handleConfirmRestartAgent = React.useCallback(async () => {
+    if (restartAgentSubmitting) return
+
+    setRestartAgentSubmitting(true)
+    const success = await taskControlClientRef.current?.restart(!restartAgentClearContext)
+    setRestartAgentSubmitting(false)
+
+    if (success) {
+      setRestartAgentDialogOpen(false)
+      if (restartAgentClearContext) {
+        setContextUsage((prev) => ({ ...prev, used: 0 }))
+      }
+      toast.success(restartAgentClearContext ? "Agent 已重启，上下文已清空" : "Agent 已重启")
+      return
+    }
+
+    toast.error(restartAgentClearContext ? "重启 Agent 并清空上下文失败" : "重启 Agent 失败")
+  }, [restartAgentClearContext, restartAgentSubmitting])
 
   const showHistoryLoadButton = historyCursorReady && (!historyLoaded || historyHasMore)
 
-  const updateChatScrollState = React.useCallback(() => {
-    const container = chatScrollRef.current
+  const getChatScrollContainer = React.useCallback(() => {
+    if (chatScrollRef.current?.isConnected) {
+      return chatScrollRef.current
+    }
+
+    const container = chatScrollRootRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null
+    chatScrollRef.current = container
+    return container
+  }, [])
+
+  const updateChatScrollState = React.useCallback((options?: { syncAutoScroll?: boolean }) => {
+    const container = getChatScrollContainer()
     if (!container) return
 
     const maxScrollTop = Math.max(container.scrollHeight - container.clientHeight, 0)
     const hasOverflow = maxScrollTop > 4
+    const isAtTop = !hasOverflow || container.scrollTop <= 8
+    const isAtBottom = !hasOverflow || maxScrollTop - container.scrollTop <= 24
 
     setChatHasOverflow(hasOverflow)
-    setChatAtTop(!hasOverflow || container.scrollTop <= 8)
-    setChatAtBottom(!hasOverflow || maxScrollTop - container.scrollTop <= 8)
-  }, [])
+    setChatAtTop(isAtTop)
+    setChatAtBottom(isAtBottom)
+
+    if (!hasOverflow) {
+      shouldAutoScrollChatRef.current = true
+      return
+    }
+
+    if (options?.syncAutoScroll && !autoScrollIntentLockedRef.current) {
+      shouldAutoScrollChatRef.current = isAtBottom
+    }
+  }, [getChatScrollContainer])
 
   React.useEffect(() => {
-    const container = chatScrollRef.current
+    if (showPreparing) return
+
+    const container = getChatScrollContainer()
     const content = chatContentRef.current
     if (!container) return
 
-    const handleScroll = () => updateChatScrollState()
+    const handleScroll = () => updateChatScrollState({ syncAutoScroll: true })
     container.addEventListener("scroll", handleScroll, { passive: true })
 
     const resizeObserver = new ResizeObserver(() => {
@@ -521,13 +997,13 @@ export default function TaskDetailPage() {
       resizeObserver.observe(content)
     }
 
-    updateChatScrollState()
+    updateChatScrollState({ syncAutoScroll: true })
 
     return () => {
       container.removeEventListener("scroll", handleScroll)
       resizeObserver.disconnect()
     }
-  }, [updateChatScrollState])
+  }, [getChatScrollContainer, showPreparing, updateChatScrollState])
 
   React.useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -536,21 +1012,53 @@ export default function TaskDetailPage() {
     return () => window.cancelAnimationFrame(frame)
   }, [messages, hasSidePanel, hasBottomTerminal, historyLoading, historyLoaded, showHistoryLoadButton, updateChatScrollState])
 
-  const scrollChatToTop = React.useCallback(() => {
-    chatScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+  const getUserInputMessageAnchors = React.useCallback(() => {
+    return Array.from(
+      chatContentRef.current?.querySelectorAll<HTMLElement>('[data-message-type="user_input"]') ?? [],
+    )
   }, [])
 
-  const scrollChatToBottom = React.useCallback(() => {
-    const container = chatScrollRef.current
+  const scrollChatToPreviousUserInput = React.useCallback(() => {
+    const container = getChatScrollContainer()
     if (!container) return
-    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" })
-  }, [])
 
-  React.useEffect(() => {
-    if (historyLoading) return
-    if (previousRunningMessagesSignatureRef.current === runningMessagesSignature) return
+    shouldAutoScrollChatRef.current = false
 
-    previousRunningMessagesSignatureRef.current = runningMessagesSignature
+    const containerTop = container.getBoundingClientRect().top
+    const target = getUserInputMessageAnchors()
+      .filter((anchor) => anchor.getBoundingClientRect().top < containerTop - 8)
+      .at(-1)
+
+    if (!target) {
+      container.scrollTo({ top: 0, behavior: "smooth" })
+      return
+    }
+
+    container.scrollTo({
+      top: container.scrollTop + target.getBoundingClientRect().top - containerTop,
+      behavior: "smooth",
+    })
+  }, [getChatScrollContainer, getUserInputMessageAnchors])
+
+  const scheduleChatScrollToBottom = React.useCallback((behavior: ScrollBehavior = "smooth", options?: { forceAutoScroll?: boolean }) => {
+    const container = getChatScrollContainer()
+    if (!container) return
+
+    if (options?.forceAutoScroll) {
+      shouldAutoScrollChatRef.current = true
+    }
+
+    if (behavior === "smooth") {
+      autoScrollIntentLockedRef.current = true
+      if (autoScrollLockTimeoutRef.current !== null) {
+        clearTimeout(autoScrollLockTimeoutRef.current)
+      }
+      autoScrollLockTimeoutRef.current = setTimeout(() => {
+        autoScrollIntentLockedRef.current = false
+        autoScrollLockTimeoutRef.current = null
+        updateChatScrollState()
+      }, 450)
+    }
 
     if (autoScrollFrameRef.current !== null) {
       window.cancelAnimationFrame(autoScrollFrameRef.current)
@@ -558,43 +1066,223 @@ export default function TaskDetailPage() {
 
     autoScrollFrameRef.current = window.requestAnimationFrame(() => {
       autoScrollFrameRef.current = null
-      const container = chatScrollRef.current
-      if (!container) return
-      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" })
+      const nextContainer = getChatScrollContainer()
+      if (!nextContainer) return
+      nextContainer.scrollTo({ top: nextContainer.scrollHeight, behavior })
     })
+  }, [getChatScrollContainer, updateChatScrollState])
 
+  const scrollChatToNextUserInput = React.useCallback(() => {
+    const container = getChatScrollContainer()
+    if (!container) return
+
+    const containerTop = container.getBoundingClientRect().top
+    const target = getUserInputMessageAnchors().find((anchor) => anchor.getBoundingClientRect().top > containerTop + 8)
+
+    if (!target) {
+      scheduleChatScrollToBottom("smooth", { forceAutoScroll: true })
+      return
+    }
+
+    shouldAutoScrollChatRef.current = false
+    container.scrollTo({
+      top: container.scrollTop + target.getBoundingClientRect().top - containerTop,
+      behavior: "smooth",
+    })
+  }, [getChatScrollContainer, getUserInputMessageAnchors, scheduleChatScrollToBottom])
+
+  React.useEffect(() => {
     return () => {
       if (autoScrollFrameRef.current !== null) {
         window.cancelAnimationFrame(autoScrollFrameRef.current)
         autoScrollFrameRef.current = null
       }
+      if (autoScrollLockTimeoutRef.current !== null) {
+        clearTimeout(autoScrollLockTimeoutRef.current)
+        autoScrollLockTimeoutRef.current = null
+      }
+      autoScrollIntentLockedRef.current = false
     }
-  }, [historyLoading, runningMessagesSignature])
+  }, [getChatScrollContainer])
+
+  React.useEffect(() => {
+    if (!latestLiveUserInputId) return
+    if (previousLiveUserInputIdRef.current === latestLiveUserInputId) return
+
+    previousLiveUserInputIdRef.current = latestLiveUserInputId
+    scheduleChatScrollToBottom("smooth", { forceAutoScroll: true })
+  }, [latestLiveUserInputId, scheduleChatScrollToBottom])
+
+  React.useEffect(() => {
+    if (!latestCompletedLiveCycleId) return
+    if (previousLiveEndedCycleIdRef.current === latestCompletedLiveCycleId) return
+
+    previousLiveEndedCycleIdRef.current = latestCompletedLiveCycleId
+    if (!shouldAutoScrollChatRef.current) return
+
+    scheduleChatScrollToBottom("smooth")
+  }, [latestCompletedLiveCycleId, scheduleChatScrollToBottom])
+
+  React.useEffect(() => {
+    if (historyLoading) return
+    if (previousRunningMessagesSignatureRef.current === runningMessagesSignature) return
+
+    previousRunningMessagesSignatureRef.current = runningMessagesSignature
+    if (!shouldAutoScrollChatRef.current) return
+
+    scheduleChatScrollToBottom("auto")
+  }, [historyLoading, runningMessagesSignature, scheduleChatScrollToBottom])
 
   const detailHeader = (
     <div className="shrink-0">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Badge variant="outline" className="shrink-0">{task?.model?.model}</Badge>
+          <DropdownMenu onOpenChange={(open) => {
+            if (!open) {
+              setOpenModelGroupKey(undefined)
+            }
+          }}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 max-w-[220px] shrink-0 gap-1 px-2 text-xs font-normal"
+                disabled={!canSwitchModel}
+              >
+                <span className="truncate">{getCurrentModelDisplayName() || "未知模型"}</span>
+                <IconChevronDown className="size-3.5 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-[min(420px,var(--radix-dropdown-menu-content-available-height))] min-w-[320px] overflow-y-auto max-sm:w-[calc(100vw-2rem)] max-sm:min-w-0">
+              {loadingModels ? (
+                <DropdownMenuItem disabled>加载中...</DropdownMenuItem>
+              ) : supportedModels.length === 0 ? (
+                <DropdownMenuItem disabled>暂无可用模型</DropdownMenuItem>
+              ) : (
+                <DropdownMenuRadioGroup value={currentModelId}>
+                  {isMobile ? modelGroups.map((group) => (
+                    <div key={group.key} className="not-first:mt-1 not-first:border-t not-first:border-border not-first:pt-2">
+                      {renderModelSwitchGroupHeader(group)}
+                      <div className="mt-1 space-y-0.5">
+                        {group.models.map((model) => renderModelSwitchOption(model, Boolean(getBuiltinModelName(model.model)), true))}
+                      </div>
+                    </div>
+                  )) : modelGroups.map(renderModelSwitchGroup)}
+                </DropdownMenuRadioGroup>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            {taskInteractive && hasContextUsage && (
+              <HoverCard
+                open={contextUsagePopoverOpen}
+                onOpenChange={setContextUsagePopoverOpen}
+                openDelay={120}
+                closeDelay={180}
+              >
+                <HoverCardTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex shrink-0 items-center rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    aria-label="查看上下文使用情况"
+                  >
+                    <CircularProgress
+                      value={contextUsage.used ?? 0}
+                      max={contextUsage.size ?? 0}
+                      size={20}
+                      strokeWidth={3}
+                      indicatorClassName={contextProgressClassName}
+                    />
+                  </button>
+                </HoverCardTrigger>
+                <HoverCardContent
+                  side="bottom"
+                  align="start"
+                  className="w-90 p-0"
+                >
+                  <div className="overflow-hidden rounded-md bg-background">
+                    <div className="flex items-center gap-3 border-b bg-muted/35 px-3 py-3">
+                      <CircularProgress
+                        value={contextUsage.used ?? 0}
+                        max={contextUsage.size ?? 0}
+                        size={24}
+                        strokeWidth={3}
+                        indicatorClassName={contextProgressClassName}
+                      />
+                      <div className="min-w-0">
+                        <div className={cn("text-sm font-medium", contextProgressClassName)}>
+                          上下文已使用 {contextUsagePercent}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="px-3 py-2.5 text-xs leading-5 text-foreground">
+                      上下文过大可能导致 AI 模型响应变慢、token 消耗量增多。
+                    </div>
+                    <div className="space-y-2 border-t bg-muted/15 p-2">
+                      <div className="rounded-md border bg-background px-3 py-2.5 shadow-xs">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium">压缩上下文</div>
+                            <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                              尽量保留关键信息，减少上下文占用。
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={contextProgress >= 0.5 ? "default" : "secondary"}
+                            className="shrink-0"
+                            disabled={!canInput}
+                            onClick={handleCompactContext}
+                          >
+                            压缩
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="rounded-md border bg-background px-3 py-2.5 shadow-xs">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium">重置上下文</div>
+                            <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                              直接清空当前上下文，重新开始后续对话。
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className="shrink-0"
+                            disabled={!canInput}
+                            onClick={() => {
+                              setContextUsagePopoverOpen(false)
+                              setResetContextDialogOpen(true)
+                            }}
+                          >
+                            重置
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </HoverCardContent>
+              </HoverCard>
+            )}
+            {totalTokens > 0 && (
+              <span className="hidden shrink-0 lg:inline">
+                累计消耗 {formatTokens(totalTokens)} tokens
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          {totalTokens > 0 && (
-            <span className="text-xs text-muted-foreground shrink-0">
-              <span className="sm:hidden">
-                {formatTokens(totalTokens)} tokens
-              </span>
-              <span className="hidden sm:inline">
-                输入 {formatTokens(task?.stats?.input_tokens) || "-"} / 输出 {formatTokens(task?.stats?.output_tokens) || "-"} tokens
-              </span>
-            </span>
-          )}
           <div className="flex items-center gap-0.5">
             <Button
               variant="ghost"
               size="sm"
-              className={cn("h-7 min-w-0 px-2 gap-1 text-xs font-normal", terminalPanelOpen && "text-primary bg-accent")}
+              className={cn("hidden h-7 min-w-0 gap-1 px-2 text-sm font-normal md:inline-flex", terminalPanelOpen && "text-primary bg-accent")}
               onClick={toggleTerminalPanel}
-              disabled={!vmOnline}
+              disabled={!taskInteractive}
             >
               <IconTerminal2 className="size-3.5" />
               终端
@@ -602,9 +1290,9 @@ export default function TaskDetailPage() {
             <Button
               variant="ghost"
               size="sm"
-              className={cn("h-7 min-w-0 px-2 gap-1 text-xs font-normal", activeSidePanel === "files" && "text-primary bg-accent")}
+              className={cn("h-7 min-w-0 px-2 gap-1 text-sm font-normal", activeSidePanel === "files" && "text-primary bg-accent")}
               onClick={() => toggleSidePanel("files")}
-              disabled={!vmOnline}
+              disabled={!taskInteractive}
             >
               <IconFile className="size-3.5" />
               文件{fileChangesCount > 0 ? ` (${fileChangesCount})` : ""}
@@ -612,9 +1300,9 @@ export default function TaskDetailPage() {
             <Button
               variant="ghost"
               size="sm"
-              className={cn("h-7 min-w-0 px-2 gap-1 text-xs font-normal", previewDialogOpen && "text-primary bg-accent")}
+              className={cn("h-7 min-w-0 px-2 gap-1 text-sm font-normal", previewDialogOpen && "text-primary bg-accent")}
               onClick={togglePreviewDialog}
-              disabled={!vmOnline}
+              disabled={!taskInteractive}
             >
               <IconDeviceDesktop className="size-3.5" />
               预览{previewPortCount > 0 ? ` (${previewPortCount})` : ""}
@@ -628,20 +1316,114 @@ export default function TaskDetailPage() {
   return (
     <div className="flex flex-col h-full min-h-0 gap-2">
       {detailHeader}
+      <AlertDialog
+        open={modelSwitchDialogOpen}
+        onOpenChange={(open) => {
+          if (modelSwitchSubmitting) return
+          setModelSwitchDialogOpen(open)
+          if (!open) {
+            setPendingSwitchModel(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>切换模型</AlertDialogTitle>
+            <AlertDialogDescription>
+              即将把当前任务模型切换为 {pendingSwitchModel ? getModelOptionDisplayName(pendingSwitchModel) : "所选模型"}。请确认是否继续。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={modelSwitchSubmitting}>取消</AlertDialogCancel>
+            <Button
+              type="button"
+              onClick={() => {
+                void handleConfirmModelSwitch()
+              }}
+              disabled={modelSwitchSubmitting}
+            >
+              {modelSwitchSubmitting && <Spinner className="mr-2 size-4" />}
+              确认切换
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={resetContextDialogOpen}
+        onOpenChange={(open) => {
+          if (resetContextSubmitting) return
+          setResetContextDialogOpen(open)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>重置上下文</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要重置当前上下文吗？后续操作将会基于新的上下文进行。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetContextSubmitting}>取消</AlertDialogCancel>
+            <Button
+              type="button"
+              onClick={() => {
+                void handleConfirmResetContext()
+              }}
+              disabled={resetContextSubmitting}
+            >
+              {resetContextSubmitting && <Spinner className="mr-2 size-4" />}
+              确认
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={restartAgentDialogOpen}
+        onOpenChange={(open) => {
+          if (restartAgentSubmitting) return
+          setRestartAgentDialogOpen(open)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {restartAgentClearContext ? "重启 Agent 并清空上下文" : "重启 Agent"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {restartAgentClearContext
+                ? "确定要重启 Agent 并清空当前上下文吗？完成后 AI 会失去之前的记忆，后续操作将会基于新的上下文进行。"
+                : "确定要重启 Agent 吗？当前上下文会被保留。"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={restartAgentSubmitting}>取消</AlertDialogCancel>
+            <Button
+              type="button"
+              onClick={() => {
+                void handleConfirmRestartAgent()
+              }}
+              disabled={restartAgentSubmitting}
+            >
+              {restartAgentSubmitting && <Spinner className="mr-2 size-4" />}
+              确认
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {showPreparing ? (
         <TaskPreparingView task={task} />
       ) : (
-        <ResizablePanelGroup direction="vertical">
-          <ResizablePanel id="top" order={1} defaultSize={hasBottomTerminal ? 75 : 100} minSize={30} className="min-h-0">
-            <ResizablePanelGroup direction="horizontal">
-              <ResizablePanel id="chat" order={1} defaultSize={hasSidePanel ? 50 : 100} minSize={hasSidePanel ? 30 : 100} className="min-w-0">
+        <ResizablePanelGroup orientation="vertical">
+          <ResizablePanel id="top" defaultSize={hasBottomTerminal ? 75 : 100} minSize={30} className="min-h-0">
+            <ResizablePanelGroup orientation="horizontal">
+              <ResizablePanel id="chat" defaultSize={hasSidePanel ? 50 : 100} minSize={hasSidePanel ? 30 : 100} className="min-w-0">
                 <div className={cn("flex flex-col h-full min-h-0 gap-2")}>
                   {/* 消息列表 */}
-                  <div className="flex-1 min-h-0 min-w-0 relative">
-                    <ScrollArea className="h-full [&>[data-radix-scroll-area-viewport]>div]:!block" viewportRef={chatScrollRef}>
+                  <div ref={chatScrollRootRef} className="flex-1 min-h-0 min-w-0 relative">
+                    <ScrollArea className="h-full [&>[data-radix-scroll-area-viewport]>div]:!block">
                       <div
                         ref={chatContentRef}
-                        className={cn("min-h-full flex flex-col gap-3", hasSidePanel ? "w-full" : "mx-auto max-w-[800px]")}
+                        className={cn("min-h-full flex flex-col gap-3", hasSidePanel ? "w-full" : "mx-auto max-w-[960px]")}
                       >
                         {showHistoryLoadButton && (
                           <div className="flex justify-center">
@@ -676,50 +1458,53 @@ export default function TaskDetailPage() {
                     </ScrollArea>
                     {chatHasOverflow && (
                       <div className="pointer-events-none absolute inset-y-0 left-0 right-0 z-10">
-                        <div className={cn("relative h-full", hasSidePanel ? "w-full" : "mx-auto max-w-[800px]")}>
+                        <div className={cn("relative h-full", hasSidePanel ? "w-full" : "mx-auto max-w-[960px]")}>
                           <div className="pointer-events-auto absolute top-1/2 right-1 flex -translate-y-1/2 flex-col gap-2">
-                            {!chatAtTop && (
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="secondary"
-                                className="size-9 rounded-full shadow-md opacity-45 transition-opacity hover:opacity-100 cursor-pointer"
-                                onClick={scrollChatToTop}
-                                aria-label="滚动到顶部"
-                              >
-                                <IconArrowUp className="size-4" />
-                              </Button>
-                            )}
-                            {!chatAtBottom && (
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="secondary"
-                                className="size-9 rounded-full shadow-md opacity-45 transition-opacity hover:opacity-100 cursor-pointer"
-                                onClick={scrollChatToBottom}
-                                aria-label="滚动到底部"
-                              >
-                                <IconArrowDown className="size-4" />
-                              </Button>
-                            )}
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="secondary"
+                              className="size-9 rounded-full shadow-md opacity-45 transition-opacity hover:opacity-100 cursor-pointer disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-25"
+                              onClick={scrollChatToPreviousUserInput}
+                              disabled={chatAtTop}
+                              aria-label="滚动到上一条用户消息"
+                            >
+                              <IconArrowUp className="size-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="secondary"
+                              className="size-9 rounded-full shadow-md opacity-45 transition-opacity hover:opacity-100 cursor-pointer disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-25"
+                              onClick={scrollChatToNextUserInput}
+                              disabled={chatAtBottom}
+                              aria-label="滚动到下一条用户消息"
+                            >
+                              <IconArrowDown className="size-4" />
+                            </Button>
                           </div>
                         </div>
                       </div>
                     )}
                   </div>
                   {/* 输入框 */}
-                  <div className={cn("shrink-0", hasSidePanel ? "w-full" : "mx-auto max-w-[800px] w-full")}>
-                    {vmOnline ? (
+                  <div className={cn("shrink-0", hasSidePanel ? "w-full" : "mx-auto max-w-[960px] w-full")}>
+                    {taskInteractive && plan.entries.length > 0 && (
+                      <div className="mb-2">
+                        <PlanStepsBlock plan={plan} streamStatus={planStreamStatus} />
+                      </div>
+                    )}
+                    {taskInteractive ? (
                       <TaskChatInputBox
                         streamStatus={streamStatus}
                         availableCommands={availableCommands}
                         onSend={handleSend}
                         onCancel={handleCancel}
+                        onRequestRestartAgent={handleRequestRestartAgent}
+                        whiteboardPersistenceKey={`task-whiteboard-${taskId}`}
                         sending={sending}
                         queueSize={0}
                         executionTimeMs={timeCost}
-                        sendResetSession={handleResetSession}
-                        sendReloadSession={handleReloadSession}
                       />
                     ) : (
                       <div className="flex items-center justify-center w-full border bg-muted/50 rounded-md p-2 text-xs text-muted-foreground">
@@ -732,12 +1517,12 @@ export default function TaskDetailPage() {
               {hasSidePanel && (
                 <>
                   <ResizableHandle withHandle className="ml-2 shrink-0 bg-transparent after:hidden" />
-                  <ResizablePanel id="right-panel" order={2} defaultSize={50} minSize={25} className="min-w-0">
+                  <ResizablePanel id="right-panel" defaultSize={50} minSize={25} className="min-w-0">
                     <div className="h-full overflow-hidden flex flex-col">
                       {activeSidePanel === "files" && (
                         <div className="flex-1 min-h-0 overflow-hidden">
                           <TaskFileExplorer
-                            disabled={!vmOnline}
+                            disabled={!taskInteractive}
                             repository={taskControlClientRef.current}
                             refreshSignal={fileRefreshSignal}
                             onChangesCountChange={setFileChangesCount}
@@ -755,9 +1540,9 @@ export default function TaskDetailPage() {
           {hasBottomTerminal && (
             <>
               <ResizableHandle withHandle className="mt-2 shrink-0 bg-transparent after:hidden" />
-              <ResizablePanel id="bottom-terminal" order={2} defaultSize={25} minSize={20} className="min-h-0">
+              <ResizablePanel id="bottom-terminal" defaultSize={25} minSize={20} className="min-h-0">
                 <div className="h-full w-full border rounded-md overflow-hidden">
-                  <TaskTerminalPanel envid={envid} disabled={!vmOnline} onClosePanel={() => setTerminalPanelOpen(false)} />
+                  <TaskTerminalPanel envid={envid} disabled={!taskInteractive} onClosePanel={() => setTerminalPanelOpen(false)} />
                 </div>
               </ResizablePanel>
             </>
@@ -773,7 +1558,7 @@ export default function TaskDetailPage() {
               size="icon-sm"
               className="shrink-0"
               onClick={() => void fetchPortForwards()}
-              disabled={!vmOnline}
+              disabled={!taskInteractive}
             >
               <IconReload className="size-4" />
             </Button>
@@ -781,7 +1566,7 @@ export default function TaskDetailPage() {
           <TaskPreviewPanel
             ports={previewPorts}
             onRefresh={fetchPortForwards}
-            disabled={!vmOnline}
+            disabled={!taskInteractive}
             embedded
           />
         </DialogContent>

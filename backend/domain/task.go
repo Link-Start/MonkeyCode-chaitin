@@ -20,26 +20,35 @@ type TaskUsecase interface {
 	GetPublic(ctx context.Context, user *User, id uuid.UUID) (*Task, error)
 	Info(ctx context.Context, user *User, id uuid.UUID) (*Task, bool, error)
 	List(ctx context.Context, user *User, req TaskListReq) (*ListTaskResp, error)
-	Continue(ctx context.Context, user *User, id uuid.UUID, content string) error
+	Continue(ctx context.Context, user *User, id uuid.UUID, req ContinueTaskReq) error
 	Create(ctx context.Context, user *User, req CreateTaskReq) (*ProjectTask, error)
 	Stop(ctx context.Context, user *User, id uuid.UUID) error
 	Cancel(ctx context.Context, user *User, id uuid.UUID) error
 	AutoApprove(ctx context.Context, user *User, id uuid.UUID, approve bool) error
+	SwitchModel(ctx context.Context, user *User, taskID uuid.UUID, req SwitchTaskModelReq) (*SwitchTaskModelResp, error)
 	GitTask(ctx context.Context, id uuid.UUID) (*GitTask, error)
 	Delete(ctx context.Context, user *User, id uuid.UUID) error
+	Update(ctx context.Context, user *User, req UpdateTaskReq) error
+	IncrUserInputCount(ctx context.Context, userID, taskID uuid.UUID) error
 }
 
 // TaskRepo 任务数据访问接口
 type TaskRepo interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*db.Task, error)
+	GetLogStore(ctx context.Context, id uuid.UUID) (consts.LogStore, error)
 	Stat(ctx context.Context, id uuid.UUID) (*TaskStats, error)
 	StatByIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*TaskStats, error)
 	Info(ctx context.Context, user *User, id uuid.UUID, isPrivileged bool) (*db.Task, error)
 	List(ctx context.Context, user *User, req TaskListReq) ([]*db.ProjectTask, *db.PageInfo, error)
 	Create(ctx context.Context, user *User, req CreateTaskReq, token string, fn func(*db.ProjectTask, *db.Model, *db.Image) (*taskflow.VirtualMachine, error)) (*db.ProjectTask, error)
 	Update(ctx context.Context, user *User, id uuid.UUID, fn func(up *db.TaskUpdateOne) error) error
+	RefreshLastActiveAt(ctx context.Context, id uuid.UUID, at time.Time, minInterval time.Duration) error
 	Stop(ctx context.Context, user *User, id uuid.UUID, fn func(*db.Task) error) error
 	Delete(ctx context.Context, user *User, id uuid.UUID) error
+	UpdateProjectTaskModel(ctx context.Context, taskID, modelID uuid.UUID) error
+	CreateModelSwitch(ctx context.Context, item *TaskModelSwitch) error
+	FinishModelSwitch(ctx context.Context, id uuid.UUID, success bool, message, sessionID string) error
+	CompleteModelSwitch(ctx context.Context, id, taskID, modelID uuid.UUID, success bool, message, sessionID string) error
 }
 
 // repoFullName 从 repo_url 中提取 full_name
@@ -84,8 +93,19 @@ type CreateTaskReq struct {
 	SystemPrompt  string             `json:"system_prompt"`
 	Type          consts.TaskType    `json:"task_type"`
 	SubType       consts.TaskSubType `json:"sub_type"`
+	Attachments   []TaskAttachment   `json:"attachments" validate:"omitempty"` // 附件列表，最多 10 个；URL 必须匹配后端配置的附件白名单前缀
 	Now           time.Time          `json:"-"`
 	UsePublicHost bool               `json:"-"`
+}
+
+type ContinueTaskReq struct {
+	Content     []byte           `json:"content"`
+	Attachments []TaskAttachment `json:"attachments"`
+}
+
+type TaskAttachment struct {
+	URL      string `json:"url"`
+	Filename string `json:"filename"`
 }
 
 // Validate 验证请求参数
@@ -98,6 +118,40 @@ func (r *CreateTaskReq) Validate() error {
 		}
 	}
 	return nil
+}
+
+// UpdateTaskReq 更新任务请求
+type UpdateTaskReq struct {
+	ID    uuid.UUID `param:"id" validate:"required" json:"-" swaggerignore:"true"`
+	Title *string   `json:"title"`
+}
+
+// SwitchTaskModelReq 切换任务运行模型请求
+type SwitchTaskModelReq struct {
+	RequestID   string    `json:"request_id"`
+	ModelID     uuid.UUID `json:"model_id" validate:"required"`
+	LoadSession bool      `json:"load_session"`
+}
+
+// SwitchTaskModelResp 切换任务运行模型响应
+type SwitchTaskModelResp struct {
+	ID        uuid.UUID   `json:"id"`
+	RequestID string      `json:"request_id,omitempty"`
+	Success   bool        `json:"success"`
+	Message   string      `json:"message"`
+	SessionID string      `json:"session_id"`
+	Model     *ModelBrief `json:"model,omitempty"`
+}
+
+// TaskModelSwitch 任务模型切换记录
+type TaskModelSwitch struct {
+	ID          uuid.UUID
+	TaskID      uuid.UUID
+	UserID      uuid.UUID
+	FromModelID *uuid.UUID
+	ToModelID   uuid.UUID
+	RequestID   string
+	LoadSession bool
 }
 
 // ListTaskResp 任务列表响应
@@ -117,7 +171,7 @@ type TaskListReq struct {
 // ProjectTask 项目任务
 type ProjectTask struct {
 	ID           uuid.UUID        `json:"id" validate:"required"`
-	Model        *Model           `json:"model,omitempty"`
+	Model        *ModelBrief      `json:"model,omitempty"`
 	Image        *Image           `json:"image,omitempty"`
 	Branch       string           `json:"branch,omitempty"`
 	CliName      consts.CliName   `json:"cli_name,omitempty"`
@@ -137,7 +191,7 @@ func (pt *ProjectTask) From(src *db.ProjectTask) *ProjectTask {
 	if src.Edges.Task != nil {
 		pt.ID = src.Edges.Task.ID
 	}
-	pt.Model = cvt.From(src.Edges.Model, &Model{})
+	pt.Model = cvt.From(src.Edges.Model, &ModelBrief{})
 	pt.Task = cvt.From(src.Edges.Task, &Task{})
 	pt.CliName = src.CliName
 	pt.RepoURL = src.RepoURL
@@ -166,12 +220,15 @@ type Task struct {
 	Type           consts.TaskType    `json:"type"`
 	SubType        consts.TaskSubType `json:"sub_type"`
 	Content        string             `json:"content"`
+	Title          string             `json:"title"`
 	Summary        string             `json:"summary"`
 	Status         consts.TaskStatus  `json:"status"`
+	LogStore       consts.LogStore    `json:"log_store"`
 	VirtualMachine *VirtualMachine    `json:"virtualmachine"`
 	CreatedAt      int64              `json:"created_at"`
+	LastActiveAt   int64              `json:"last_active_at"`
 	CompletedAt    int64              `json:"completed_at"`
-	Model          *Model             `json:"model,omitempty"`
+	Model          *ModelBrief        `json:"model,omitempty"`
 	Image          *Image             `json:"image,omitempty"`
 	Branch         string             `json:"branch,omitempty"`
 	CliName        consts.CliName     `json:"cli_name,omitempty"`
@@ -201,16 +258,24 @@ func (t *Task) From(src *db.Task) *Task {
 	t.Type = src.Kind
 	t.SubType = src.SubType
 	t.Content = src.Content
+	t.Title = src.Title
 	t.Summary = src.Summary
 	t.Status = src.Status
+	if src.LogStore != nil {
+		t.LogStore = *src.LogStore
+	}
+	if t.LogStore == "" {
+		t.LogStore = consts.LogStoreLoki
+	}
 	t.CreatedAt = src.CreatedAt.Unix()
+	t.LastActiveAt = src.LastActiveAt.Unix()
 	t.CompletedAt = src.CompletedAt.Unix()
 	if vms := src.Edges.Vms; len(vms) > 0 {
 		t.VirtualMachine = cvt.From(vms[0], &VirtualMachine{})
 	}
 	if pts := src.Edges.ProjectTasks; len(pts) > 0 {
 		pt := pts[0]
-		t.Model = cvt.From(pt.Edges.Model, &Model{})
+		t.Model = cvt.From(pt.Edges.Model, &ModelBrief{})
 		t.Image = cvt.From(pt.Edges.Image, &Image{})
 		t.Branch = pt.Branch
 		t.RepoURL = pt.RepoURL
@@ -239,9 +304,15 @@ type TaskSession struct {
 // TaskStream 任务 WebSocket 流消息
 type TaskStream struct {
 	Type      consts.TaskStreamType `json:"type"`
-	Data      []byte                `json:"data"`
+	Data      []byte                `json:"data"` // user-input 事件使用 TaskUserInputPayload 的 JSON 字符串
 	Kind      string                `json:"kind"`
 	Timestamp int64                 `json:"timestamp"`
+}
+
+// TaskUserInputPayload user-input 事件 data 字段的 JSON 结构
+type TaskUserInputPayload struct {
+	Content     []byte           `json:"content"`     // 用户输入文本，JSON 中按 base64 字符串传输
+	Attachments []TaskAttachment `json:"attachments"` // 附件列表，缺省或空数组表示无附件
 }
 
 // TaskStreamReq 任务数据流请求
@@ -255,17 +326,17 @@ type TaskControlReq struct {
 	ID uuid.UUID `json:"id" query:"id" validate:"required"` // 任务 id
 }
 
-// TaskRoundsReq 查询任务历史论次请求（向前翻页）
+// TaskRoundsReq 查询任务历史轮次请求（向前翻页）
 type TaskRoundsReq struct {
 	ID     uuid.UUID `json:"id" query:"id" validate:"required"` // 任务 ID
-	Cursor string    `json:"cursor" query:"cursor"`             // 游标（时间戳 Unix ns，从此时间点往前查询）
-	Limit  int       `json:"limit" query:"limit"`               // 返回的论次数（默认 2，上限 10）
+	Cursor string    `json:"cursor" query:"cursor"`             // 分页游标
+	Limit  int       `json:"limit" query:"limit"`               // 返回的轮次数（默认 2，上限 10）
 }
 
-// TaskRoundsResp 查询任务历史论次响应
+// TaskRoundsResp 查询任务历史轮次响应
 type TaskRoundsResp struct {
 	Chunks     []*TaskChunkEntry `json:"chunks"`
-	NextCursor string            `json:"next_cursor,omitempty"` // 下一页游标（最早条目的时间戳 ns）
+	NextCursor string            `json:"next_cursor,omitempty"` // 下一页游标
 	HasMore    bool              `json:"has_more"`
 }
 
@@ -309,4 +380,51 @@ type SpeechRecognitionData struct {
 	UserID    string `json:"user_id,omitempty" example:"uuid"`            // 用户ID (仅result类型)
 	Timestamp int64  `json:"timestamp,omitempty" example:"1640995200000"` // 时间戳 (仅result类型)
 	Error     string `json:"error,omitempty" example:"识别失败"`              // 错误信息 (仅error类型)
+}
+
+// SpeechStreamStartReq 实时语音转写 WebSocket 的 start 控制消息(客户端首帧必须为本结构)
+type SpeechStreamStartReq struct {
+	// 消息类型,固定为 "start"
+	Type string `json:"type" example:"start" binding:"required"`
+	// 音频容器格式,单声道、16-bit、采样率固定 16000Hz。
+	// pcm / wav 内部音频流必须是 pcm_s16le;ogg 必须为 opus 编码;mp3 由服务端解码。
+	Format string `json:"format,omitempty" example:"pcm" enums:"pcm,wav,ogg,mp3"`
+	// 是否启用语义顺滑(过滤"嗯/啊"等口头禅、语义重复词),默认 false
+	Disfluency bool `json:"disfluency,omitempty" example:"false"`
+}
+
+// SpeechStreamControl 实时语音转写 WebSocket 的通用控制消息(用于 stop,或解析首帧 type)
+type SpeechStreamControl struct {
+	// 控制消息类型,目前支持 "stop"
+	Type string `json:"type" example:"stop" enums:"stop"`
+}
+
+// SpeechStreamError 实时语音转写 error 事件中的错误详情。
+// Code 为远端 ASR 服务返回的错误码;本服务前置校验错误 (远端连接前) 时 Code=0,
+// 由 Message 描述原因。RequestID / Logid 用于排障时跟运维/厂商客服关联日志。
+type SpeechStreamError struct {
+	// 错误码;远端 ASR 错误码 (如豆包 45000001),本地校验错误为 0
+	Code int `json:"code" example:"45000001"`
+	// 错误描述,远端错误为远端 message,本地校验错误为可读原因
+	Message string `json:"message" example:"请求参数无效"`
+	// 后端发给远端 ASR 的 X-Api-Request-Id (UUID),便于跟单次请求关联日志
+	RequestID string `json:"request_id,omitempty" example:"67ee89ba-7050-4c04-a3d7-ac61a63499b3"`
+	// 远端 ASR 服务返回的 trace id (如豆包 X-Tt-Logid),报障必备
+	Logid string `json:"logid,omitempty" example:"202407261553070FACFE6D19421815D605"`
+}
+
+// SpeechStreamEvent 实时语音转写 WebSocket 服务端→客户端事件(所有事件统一外层结构)
+type SpeechStreamEvent struct {
+	// 事件类型:ready / partial / final / done / error
+	Type string `json:"type" example:"partial" enums:"ready,partial,final,done,error"`
+	// 句子序号,从 1 开始;partial / final 携带,其余事件省略
+	Index int `json:"index,omitempty" example:"1"`
+	// 识别文本;partial(中间结果,会反复变化)/ final(本句定稿)携带
+	Text string `json:"text,omitempty" example:"今天天气真不错。"`
+	// 远端 ASR 服务的 trace id;ready / error 事件携带,便于全程关联日志
+	Logid string `json:"logid,omitempty" example:"202407261553070FACFE6D19421815D605"`
+	// 错误详情;仅 error 事件携带
+	Error *SpeechStreamError `json:"error,omitempty"`
+	// 服务端时间(毫秒),所有事件都有
+	Timestamp int64 `json:"timestamp" example:"1733299200000"`
 }

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty"
 import { Item, ItemContent, ItemDescription, ItemFooter, ItemTitle } from "@/components/ui/item"
 import { Spinner } from "@/components/ui/spinner"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { getGitPlatformIcon } from "@/utils/common"
 import { apiRequest } from "@/utils/requestUtils"
 import { IconAlertTriangle, IconCircleCheck, IconFolder, IconLoader, IconReload } from "@tabler/icons-react"
@@ -156,12 +157,25 @@ export const GitBotTasks = forwardRef<GitBotTasksRef>(function GitBotTasks(_, re
             </ItemContent>
             <ItemFooter className="flex flex-row gap-2 justify-between border-t pt-3 text-xs text-muted-foreground">
               <div className="flex flex-row gap-2">
-                <Badge variant="outline">
-                  {task.status === "finished" && <><IconCircleCheck />任务完成</>}
-                  {task.status === "error" && <><IconAlertTriangle />执行失败</>}
-                  {task.status === "pending" && <><Spinner />等待执行</>}
-                  {task.status === "processing" && <><Spinner />正在执行</>}
-                </Badge>
+                {task.status === "finished" ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <Badge variant="outline">
+                          <IconCircleCheck />
+                          已终止
+                        </Badge>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>连续三天不对话的任务将自动回收</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <Badge variant="outline">
+                    {task.status === "error" && <><IconAlertTriangle />启动失败</>}
+                    {task.status === "pending" && <><Spinner />正在启动</>}
+                    {task.status === "processing" && <><Spinner />运行中</>}
+                  </Badge>
+                )}
                 <Badge variant="outline">
                   {getGitPlatformIcon(task.bot?.platform)}
                   {task.bot?.name}

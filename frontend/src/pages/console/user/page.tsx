@@ -18,13 +18,14 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
-import { RefreshCw, Users } from "lucide-react"
+import CommunityDialog from "@/components/console/nav/community-dialog"
+import NavBalance from "@/components/console/nav/nav-balance"
+import WalletDialog from "@/components/console/nav/wallet-dialog"
+import { RefreshCw } from "lucide-react"
 import { DataProvider } from "@/components/console/data-provider"
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card"
+import FreeModelUsageIndicator from "@/components/console/nav/free-model-usage-indicator"
+import { IS_OFFLINE_EDITION } from "@/utils/edition"
+import { ModeToggle } from "@/components/mode-toggle"
 
 const SettingsDialogContext = createContext<{ open: boolean; setOpen: (open: boolean) => void } | null>(null)
 export const useSettingsDialog = () => {
@@ -73,6 +74,8 @@ function UserConsoleContent() {
       : [{ label: "用户控制台" }])
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [communityOpen, setCommunityOpen] = useState(false)
+  const [balanceOpen, setBalanceOpen] = useState(false)
 
   return (
     <DataProvider>
@@ -85,7 +88,7 @@ function UserConsoleContent() {
               <SidebarTrigger className="-ml-1 shrink-0" />
               <Separator
                 orientation="vertical"
-                className="mr-2 shrink-0 data-[orientation=vertical]:h-4"
+                className="mr-2 shrink-0 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center"
               />
               <Breadcrumb className="flex min-w-0 flex-1 overflow-hidden">
                 <BreadcrumbList className="min-w-0 flex-1 flex-nowrap break-normal">
@@ -131,45 +134,7 @@ function UserConsoleContent() {
               </Breadcrumb>
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-2 px-4">
-              <HoverCard openDelay={100} closeDelay={200}>
-                <HoverCardTrigger asChild>
-                  <Button className="hidden lg:flex" variant="ghost" size="sm">
-                    <Users className="h-[1.2rem] w-[1.2rem]" />
-                    技术交流群
-                  </Button>
-                </HoverCardTrigger>
-                <HoverCardContent className="w-auto p-4" align="center">
-                  <div className="flex flex-col items-center gap-4">
-                    <p className="text-sm font-medium">扫码加入技术交流群</p>
-                    <div className="flex flex-wrap justify-center gap-6">
-                      <div className="flex flex-col items-center gap-2">
-                        <img
-                          src="/wechat.png"
-                          alt="微信二维码"
-                          className="w-32 h-32 rounded-md"
-                        />
-                        <span className="text-xs text-muted-foreground">微信群</span>
-                      </div>
-                      <div className="flex flex-col items-center gap-2">
-                        <img
-                          src="/feishu.png"
-                          alt="飞书群二维码"
-                          className="w-32 h-32 rounded-md"
-                        />
-                        <span className="text-xs text-muted-foreground">飞书群</span>
-                      </div>
-                      <div className="flex flex-col items-center gap-2">
-                        <img
-                          src="/dingtalk.png"
-                          alt="钉钉群二维码"
-                          className="w-32 h-32 rounded-md"
-                        />
-                        <span className="text-xs text-muted-foreground">钉钉群</span>
-                      </div>
-                    </div>
-                  </div>
-                </HoverCardContent>
-              </HoverCard>
+              {!IS_OFFLINE_EDITION && <FreeModelUsageIndicator />}
               <Button
                 variant="ghost"
                 size="sm"
@@ -179,7 +144,7 @@ function UserConsoleContent() {
                 <RefreshCw className="h-[1.2rem] w-[1.2rem]" />
                 刷新
               </Button>
-              {/*<ModeToggle />*/}
+              <ModeToggle />
             </div>
           </header>
           <div className="flex h-full w-full flex-col gap-4 pb-4 overflow-y-hidden">
@@ -188,6 +153,14 @@ function UserConsoleContent() {
             </div>
           </div>
         </SidebarInset>
+        <CommunityDialog open={communityOpen} onOpenChange={setCommunityOpen} />
+        <NavBalance
+          hideTrigger
+          open={balanceOpen}
+          onOpenChange={setBalanceOpen}
+          initialSection="account"
+        />
+        <WalletDialog />
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </SidebarProvider>
       </SettingsDialogContext.Provider>

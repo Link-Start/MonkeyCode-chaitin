@@ -1,55 +1,372 @@
 import { useState, useRef } from "react"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group"
-import { IconCommand, IconLoader, IconMenu4, IconPlayerStopFilled, IconRecycle, IconReload, IconSend, IconTerminal2 } from "@tabler/icons-react"
+import { IconCommand, IconLoader, IconPalette, IconReload, IconTrash, IconPlayerStopFilled, IconSend, IconTerminal2, IconUpload } from "@tabler/icons-react"
 import React from "react"
 import { VoiceInputButton } from "./voice-input-button"
 import type { TaskMessageHandlerStatus } from "@/components/console/task/task-message-handler"
-import type { AvailableCommand, AvailableCommands, TaskStreamStatus } from "./task-shared"
+import type { AvailableCommand, AvailableCommands, TaskStreamStatus, TaskUserInput, TaskUserInputPayload } from "./task-shared"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { TaskFileUploadDialog, TaskUploadedFileItem, type TaskUploadedFile } from "./task-file-upload"
+import { toast } from "sonner"
+import { TaskWhiteboardDialog } from "./task-whiteboard-dialog"
+import { TaskAttachmentPreviewDialog } from "./task-attachment-preview-dialog"
+import { IS_OFFLINE_EDITION } from "@/utils/edition"
+import { getTaskContentLimitErrorMessage, MAX_TASK_CONTENT_LENGTH } from "./task-content-limit"
 
+const MAX_UPLOAD_FILE_SIZE = 2 * 1024 * 1024
+const MAX_UPLOADED_FILES = 3
+const PASTED_IMAGE_EXTENSION_BY_TYPE: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/bmp": "bmp",
+  "image/svg+xml": "svg",
+  "image/avif": "avif",
+}
 
 interface TaskChatInputBoxProps {
   streamStatus: TaskStreamStatus | TaskMessageHandlerStatus
   availableCommands: AvailableCommands | null
-  onSend: (content: string) => void
+  onSend: (input: TaskUserInput) => Promise<boolean> | boolean | void
   sending: boolean
   queueSize: number
-  sendResetSession: () => void
-  sendReloadSession: () => void
   executionTimeMs?: number
   onCancel?: () => void
+  onRequestRestartAgent?: (clearContext: boolean) => void
+  whiteboardPersistenceKey?: string
 }
 
-export const TaskChatInputBox = ({ streamStatus, availableCommands, onSend, sending, queueSize, sendResetSession, sendReloadSession, executionTimeMs = 0, onCancel }: TaskChatInputBoxProps) => {
+export const TaskChatInputBox = ({ streamStatus, availableCommands, onSend, sending, queueSize, executionTimeMs = 0, onCancel, onRequestRestartAgent, whiteboardPersistenceKey = "task-whiteboard" }: TaskChatInputBoxProps) => {
   const [content, setContent] = useState('')
   const [isComposing, setIsComposing] = useState(false)
-  const [resetDialogOpen, setResetDialogOpen] = useState(false)
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null)
+  const [shouldAutoUpload, setShouldAutoUpload] = useState(false)
+  const [isDragActive, setIsDragActive] = useState(false)
+  const [whiteboardDialogOpen, setWhiteboardDialogOpen] = useState(false)
+  const [whiteboardFileIndex, setWhiteboardFileIndex] = useState(1)
+  const [previewFile, setPreviewFile] = useState<TaskUploadedFile | null>(null)
+  const [uploadedFiles, setUploadedFiles] = useState<TaskUploadedFile[]>([])
+  const [slashCommandConfirmOpen, setSlashCommandConfirmOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const dragDepthRef = useRef(0)
+  const nextAttachmentFileIndexRef = useRef(1)
   const isExecuting = (streamStatus === 'connected' || streamStatus === 'inited')
+  const wasExecutingRef = useRef(isExecuting)
+  const restoreSubmittedInputOnIdleRef = useRef(false)
+  const lastSubmittedInputRef = useRef<{ content: string; uploadedFiles: TaskUploadedFile[]; nextAttachmentFileIndex: number } | null>(null)
+  const canInput = React.useMemo(() => {
+    return !sending && !isExecuting && queueSize === 0
+  }, [sending, isExecuting, queueSize])
+
+  React.useEffect(() => {
+    if (wasExecutingRef.current && !isExecuting && restoreSubmittedInputOnIdleRef.current) {
+      const lastSubmittedInput = lastSubmittedInputRef.current
+      if (lastSubmittedInput) {
+        setContent(lastSubmittedInput.content)
+        setUploadedFiles(lastSubmittedInput.uploadedFiles)
+        setPreviewFile(null)
+        nextAttachmentFileIndexRef.current = lastSubmittedInput.nextAttachmentFileIndex
+      }
+      restoreSubmittedInputOnIdleRef.current = false
+    }
+    wasExecutingRef.current = isExecuting
+  }, [isExecuting])
+
+  const sendCurrentInput = async () => {
+    if (content.trim() === '') {
+      return
+    }
+
+    if (content.length > MAX_TASK_CONTENT_LENGTH) {
+      toast.error(getTaskContentLimitErrorMessage())
+      return
+    }
+
+    const payload: TaskUserInputPayload = {
+      content,
+      attachments: uploadedFiles.map((file) => ({
+        url: file.accessUrl,
+        filename: file.name,
+      })),
+    }
+    const result = await onSend(payload)
+    if (result === false) {
+      return
+    }
+
+    lastSubmittedInputRef.current = {
+      content,
+      uploadedFiles,
+      nextAttachmentFileIndex: nextAttachmentFileIndexRef.current,
+    }
+    restoreSubmittedInputOnIdleRef.current = false
+    setContent('')
+    setUploadedFiles([])
+    setPreviewFile(null)
+    setWhiteboardFileIndex(1)
+    nextAttachmentFileIndexRef.current = 1
+  }
+
+  const handleCancel = () => {
+    restoreSubmittedInputOnIdleRef.current = true
+    onCancel?.()
+  }
 
   const handleSend = () => {
     if (content.trim() === '') {
       return
     }
-    onSend(content)
-    setContent('')
+
+    if (content.length > MAX_TASK_CONTENT_LENGTH) {
+      toast.error(getTaskContentLimitErrorMessage())
+      return
+    }
+
+    if (content.startsWith('/')) {
+      setSlashCommandConfirmOpen(true)
+      return
+    }
+
+    void sendCurrentInput()
   }
 
   const handleTextRecognized = (text: string) => {
     setContent(text)
   }
+
+  const handleSelectFile = () => {
+    if (!canInput) return
+    if (uploadedFiles.length >= MAX_UPLOADED_FILES) return
+    setShouldAutoUpload(false)
+    fileInputRef.current?.click()
+  }
+
+  const hasFileExtension = (filename: string) => /\.[^./\\]+$/.test(filename)
+
+  const createPastedImageName = (file: File) => {
+    const extension = PASTED_IMAGE_EXTENSION_BY_TYPE[file.type]
+    if (!extension) {
+      return null
+    }
+    const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)
+    return `pasted-image-${timestamp}.${extension}`
+  }
+
+  const createFileWithName = (file: File, filename: string) => {
+    if (file.name === filename) {
+      return file
+    }
+
+    try {
+      return new File([file], filename, {
+        type: file.type,
+        lastModified: file.lastModified,
+      })
+    } catch {
+      return file
+    }
+  }
+
+  const appendAttachmentFileIndex = (filename: string, index: number) => {
+    const extensionIndex = filename.lastIndexOf(".")
+    if (extensionIndex <= 0) {
+      return `${filename}-${index}`
+    }
+
+    return `${filename.slice(0, extensionIndex)}-${index}${filename.slice(extensionIndex)}`
+  }
+
+  const normalizeUploadFile = (file: File) => {
+    if (file.name && hasFileExtension(file.name)) {
+      return file
+    }
+
+    const pastedImageName = createPastedImageName(file)
+    if (!pastedImageName) {
+      return file
+    }
+
+    return createFileWithName(file, pastedImageName)
+  }
+
+  const addCurrentRoundFileIndex = (file: File) => {
+    return createFileWithName(file, appendAttachmentFileIndex(file.name, nextAttachmentFileIndexRef.current))
+  }
+
+  const prepareUploadFile = (file: File, options?: { autoUpload?: boolean }) => {
+    if (!canInput) {
+      return
+    }
+
+    if (uploadedFiles.length >= MAX_UPLOADED_FILES) {
+      toast.error(`最多只能上传 ${MAX_UPLOADED_FILES} 个文件`)
+      return
+    }
+
+    const normalizedFile = addCurrentRoundFileIndex(normalizeUploadFile(file))
+
+    if (normalizedFile.size === 0) {
+      toast.error("不能上传空文件")
+      return
+    }
+
+    if (normalizedFile.size > MAX_UPLOAD_FILE_SIZE) {
+      toast.error("文件大小不能超过 2MB")
+      return
+    }
+
+    if (!hasFileExtension(normalizedFile.name)) {
+      toast.error("不支持上传没有后缀的文件")
+      return
+    }
+
+    setShouldAutoUpload(!!options?.autoUpload)
+    setSelectedUploadFile(normalizedFile)
+    setUploadDialogOpen(true)
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+
+    if (!file) {
+      return
+    }
+
+    prepareUploadFile(file)
+  }
+
+  const handleUploaded = (file: TaskUploadedFile) => {
+    setUploadedFiles((prev) => {
+      if (prev.length >= MAX_UPLOADED_FILES) {
+        return prev
+      }
+      return [...prev, file]
+    })
+    nextAttachmentFileIndexRef.current += 1
+    setSelectedUploadFile(null)
+    setShouldAutoUpload(false)
+  }
+
+  const handleWhiteboardUploaded = (file: TaskUploadedFile) => {
+    handleUploaded(file)
+    setWhiteboardFileIndex((prev) => prev + 1)
+  }
+
+  const hasTransferFile = (dataTransfer: DataTransfer) => {
+    return Array.from(dataTransfer.types).includes("Files")
+  }
+
+  const getDataTransferFiles = (dataTransfer: DataTransfer) => {
+    return Array.from(dataTransfer.files).filter((item) => item instanceof File)
+  }
+
+  const resetDragState = () => {
+    dragDepthRef.current = 0
+    setIsDragActive(false)
+  }
+
+  const canAcceptUploadFile = () => {
+    return canInput && uploadedFiles.length < MAX_UPLOADED_FILES
+  }
+
+  const getClipboardFiles = (clipboardData: DataTransfer) => {
+    const files = getDataTransferFiles(clipboardData)
+    if (files.length > 0) {
+      return files
+    }
+
+    return Array.from(clipboardData.items)
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((item): item is File => item !== null)
+  }
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = getClipboardFiles(e.clipboardData)
+    if (files.length === 0) {
+      return
+    }
+
+    e.preventDefault()
+    if (files.length > 1) {
+      toast.info("当前仅支持一次上传 1 个文件")
+    }
+
+    prepareUploadFile(files[0], { autoUpload: true })
+  }
+
+  React.useEffect(() => {
+    const handleWindowDragEnter = (event: DragEvent) => {
+      if (!event.dataTransfer || !hasTransferFile(event.dataTransfer)) return
+
+      event.preventDefault()
+      dragDepthRef.current += 1
+      if (canAcceptUploadFile()) {
+        setIsDragActive(true)
+      }
+    }
+
+    const handleWindowDragOver = (event: DragEvent) => {
+      if (!event.dataTransfer || !hasTransferFile(event.dataTransfer)) return
+
+      event.preventDefault()
+      event.dataTransfer.dropEffect = canAcceptUploadFile() ? "copy" : "none"
+      if (canAcceptUploadFile()) {
+        setIsDragActive(true)
+      }
+    }
+
+    const handleWindowDragLeave = (event: DragEvent) => {
+      if (!event.dataTransfer || !hasTransferFile(event.dataTransfer)) return
+
+      dragDepthRef.current = Math.max(dragDepthRef.current - 1, 0)
+      const leftWindow = event.clientX <= 0
+        || event.clientY <= 0
+        || event.clientX >= window.innerWidth
+        || event.clientY >= window.innerHeight
+      if (dragDepthRef.current === 0 || leftWindow) {
+        resetDragState()
+      }
+    }
+
+    const handleWindowDrop = (event: DragEvent) => {
+      if (!event.dataTransfer || !hasTransferFile(event.dataTransfer)) return
+
+      event.preventDefault()
+      resetDragState()
+
+      const files = getDataTransferFiles(event.dataTransfer)
+      if (files.length === 0) {
+        return
+      }
+      if (files.length > 1) {
+        toast.info("当前仅支持一次上传 1 个文件")
+      }
+
+      prepareUploadFile(files[0], { autoUpload: true })
+    }
+
+    window.addEventListener("dragenter", handleWindowDragEnter)
+    window.addEventListener("dragover", handleWindowDragOver)
+    window.addEventListener("dragleave", handleWindowDragLeave)
+    window.addEventListener("drop", handleWindowDrop)
+
+    return () => {
+      window.removeEventListener("dragenter", handleWindowDragEnter)
+      window.removeEventListener("dragover", handleWindowDragOver)
+      window.removeEventListener("dragleave", handleWindowDragLeave)
+      window.removeEventListener("drop", handleWindowDrop)
+    }
+  })
 
   // 处理键盘事件
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -58,6 +375,19 @@ export const TaskChatInputBox = ({ streamStatus, availableCommands, onSend, send
     }
     // 如果正在输入法组合过程中，不触发提交
     if (isComposing) {
+      return
+    }
+    if (e.key === 'Enter' && e.ctrlKey) {
+      e.preventDefault()
+      const textarea = e.currentTarget
+      const start = textarea.selectionStart
+      const end = textarea.selectionEnd
+      const nextContent = `${content.slice(0, start)}\n${content.slice(end)}`
+      setContent(nextContent)
+      requestAnimationFrame(() => {
+        textarea.selectionStart = start + 1
+        textarea.selectionEnd = start + 1
+      })
       return
     }
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -77,93 +407,146 @@ export const TaskChatInputBox = ({ streamStatus, availableCommands, onSend, send
   }
 
   const inputDisabled = React.useMemo(() => {
-    return sending || isExecuting || queueSize > 0
-  }, [sending, isExecuting, queueSize])
+    return !canInput
+  }, [canInput])
 
   const controlsDisabled = React.useMemo(() => {
-    return sending || queueSize > 0
-  }, [sending, queueSize])
+    return !canInput
+  }, [canInput])
+
+  const commandItems = availableCommands?.commands ?? []
+  const showCommandItems = !isExecuting && commandItems.length > 0
+  const contentLength = content.length
+  const contentTooLong = contentLength > MAX_TASK_CONTENT_LENGTH
+  const canSend = content.trim() !== '' && !contentTooLong
+  const canUploadMoreFiles = uploadedFiles.length < MAX_UPLOADED_FILES
+  const whiteboardFileName = `画板-${whiteboardFileIndex}.png`
 
   return (
-    <div className="relative w-full">
+    <div
+      className={cn(
+        "relative w-full rounded-md border border-transparent transition-colors",
+        isDragActive && "border-primary bg-primary/15"
+      )}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={handleFileChange}
+      />
       <InputGroup>
         {!isExecuting && (
           <InputGroupTextarea
             ref={textareaRef}
-            className="min-h-8 max-h-48 text-sm break-all"
+            className="min-h-8 max-h-36 resize-none overflow-y-auto text-sm break-all [field-sizing:content]"
             placeholder="描述你的需求，Shift+Enter 换行，Enter 发送。"
             value={content}
             onChange={(e) => setContent(e.target.value)} 
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             onCompositionStart={handleCompositionStart}
             onCompositionEnd={handleCompositionEnd} />
         )}
         <InputGroupAddon align="block-end" className="pb-1.5">
           <div className="flex flex-row justify-between w-full">
             <div className="flex flex-row gap-2 items-center min-w-0">
-              {isExecuting ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <DropdownMenu>
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="icon-sm" className="rounded-full" disabled={controlsDisabled}>
-                        <IconMenu4 />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuItem onClick={() => setResetDialogOpen(true)}>
-                        <IconRecycle />
-                        重置上下文
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => sendReloadSession()}>
-                        <IconReload />
-                        重新加载开发工具
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              ) : (
-                <>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="icon-sm" className="rounded-full" disabled={controlsDisabled}>
-                        <IconMenu4 />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuItem onClick={() => setResetDialogOpen(true)}>
-                        <IconRecycle />
-                        重置上下文
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => sendReloadSession()}>
-                        <IconReload />
-                        重新加载开发工具
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="icon-sm" className="rounded-full" disabled={controlsDisabled}>
+                      <Button variant="outline" size="icon-sm" className="rounded-full" disabled={controlsDisabled || !showCommandItems}>
                         <IconTerminal2 />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent className="max-w-[min(90vw,800px)]">
-                      {availableCommands?.commands?.map((command: AvailableCommand, index: number) => (
-                        <DropdownMenuItem key={index} className="flex flex-col gap-1 items-start" onClick={() => setContent(`/${command.name}`)}>
-                          <div className="flex flex-row gap-2 items-center">
+                  </TooltipTrigger>
+                  <TooltipContent>命令选项</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent className={showCommandItems ? "w-[min(90vw,32rem)] min-w-80 max-w-[min(90vw,32rem)]" : "w-48 min-w-48"}>
+                  {showCommandItems && (
+                    <>
+                      <DropdownMenuItem className="flex flex-col items-start gap-1 whitespace-normal" onSelect={() => onRequestRestartAgent?.(false)}>
+                        <div className="flex min-w-0 flex-row flex-wrap items-center gap-2">
+                          <IconReload />
+                          <div className="font-bold text-xs">重启 Agent</div>
+                        </div>
+                        <div className="max-w-full truncate pl-6 text-xs text-muted-foreground">
+                          保留当前上下文，重新启动 Agent 会话。
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="flex flex-col items-start gap-1 whitespace-normal" onSelect={() => onRequestRestartAgent?.(true)}>
+                        <div className="flex min-w-0 flex-row flex-wrap items-center gap-2">
+                          <IconTrash />
+                          <div className="font-bold text-xs">重启 Agent 并清空上下文</div>
+                        </div>
+                        <div className="max-w-full truncate pl-6 text-xs text-muted-foreground">
+                          清空当前上下文后，重新启动 Agent 会话。
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {commandItems.map((command: AvailableCommand, index: number) => (
+                        <DropdownMenuItem key={index} className="flex flex-col items-start gap-1 whitespace-normal" onClick={() => setContent(`/${command.name}`)}>
+                          <div className="flex min-w-0 flex-row flex-wrap items-center gap-2">
                             <IconCommand />
                             <div className="font-bold text-xs">/{command.name}</div>
                             {command.input?.hint && <div className="text-muted-foreground text-xs">[{command.input.hint}]</div>}
                           </div>
-                          <div className="text-xs text-muted-foreground pl-6">
+                          <div className="max-w-full truncate pl-6 text-xs text-muted-foreground">
                             {command.description}
                           </div>
                         </DropdownMenuItem>
                       ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {canUploadMoreFiles && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      className="rounded-full"
+                      disabled={controlsDisabled}
+                      aria-label="上传附件"
+                      onClick={handleSelectFile}
+                    >
+                      <IconUpload />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>上传附件</TooltipContent>
+                </Tooltip>
               )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-sm"
+                    className="rounded-full"
+                    disabled={controlsDisabled}
+                    aria-label="画板"
+                    onClick={() => setWhiteboardDialogOpen(true)}
+                  >
+                    <IconPalette />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>画板</TooltipContent>
+              </Tooltip>
+              {uploadedFiles.map((uploadedFile) => (
+                <TaskUploadedFileItem
+                  key={uploadedFile.accessUrl}
+                  file={uploadedFile}
+                  onPreview={() => setPreviewFile(uploadedFile)}
+                  onRemove={() => {
+                    if (previewFile?.accessUrl === uploadedFile.accessUrl) {
+                      setPreviewFile(null)
+                    }
+                    setUploadedFiles((prev) => prev.filter((file) => file.accessUrl !== uploadedFile.accessUrl))
+                  }}
+                />
+              ))}
             </div>
             <div className="flex flex-row gap-2 items-center min-w-0">
               {isExecuting && (
@@ -172,7 +555,7 @@ export const TaskChatInputBox = ({ streamStatus, availableCommands, onSend, send
                   <span className="truncate">耗时 {(executionTimeMs / 1000).toFixed(1)} 秒</span>
                 </div>
               )}
-              {!isExecuting && (
+              {!IS_OFFLINE_EDITION && !isExecuting && (
                 <VoiceInputButton
                   onTextRecognized={handleTextRecognized}
                   disabled={controlsDisabled}
@@ -182,8 +565,8 @@ export const TaskChatInputBox = ({ streamStatus, availableCommands, onSend, send
                 className={cn("flex flex-row gap-2 items-center", isExecuting && "rounded-full")}
                 variant={isExecuting ? "destructive" : "default"}
                 size={isExecuting ? "icon-sm" : "sm"} 
-                onClick={isExecuting ? onCancel : handleSend}
-                disabled={isExecuting ? !onCancel : content.trim() === '' || inputDisabled}
+                onClick={isExecuting ? handleCancel : handleSend}
+                disabled={isExecuting ? !onCancel : !canSend || inputDisabled}
               >
                 {isExecuting ? <IconPlayerStopFilled /> : <IconSend />}
                 {!isExecuting && "发送"}
@@ -192,30 +575,57 @@ export const TaskChatInputBox = ({ streamStatus, availableCommands, onSend, send
           </div>
         </InputGroupAddon>
       </InputGroup>
-
-      {/* Reset Session 确认对话框 */}
-      <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+      {contentTooLong && (
+        <div className="mt-1 px-1 text-xs text-destructive">
+          已超出 {contentLength - MAX_TASK_CONTENT_LENGTH} 字，最多 {MAX_TASK_CONTENT_LENGTH} 字，无法发送。
+        </div>
+      )}
+      <TaskFileUploadDialog
+        open={uploadDialogOpen}
+        file={selectedUploadFile}
+        autoUpload={shouldAutoUpload}
+        onOpenChange={(open) => {
+          setUploadDialogOpen(open)
+          if (!open) {
+            setSelectedUploadFile(null)
+            setShouldAutoUpload(false)
+          }
+        }}
+        onUploaded={handleUploaded}
+      />
+      <TaskWhiteboardDialog
+        open={whiteboardDialogOpen}
+        canUploadAttachment={canUploadMoreFiles}
+        fileName={whiteboardFileName}
+        onOpenChange={setWhiteboardDialogOpen}
+        onUploaded={handleWhiteboardUploaded}
+        persistenceKey={whiteboardPersistenceKey}
+      />
+      <TaskAttachmentPreviewDialog
+        open={!!previewFile}
+        file={previewFile}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewFile(null)
+          }
+        }}
+      />
+      <AlertDialog open={slashCommandConfirmOpen} onOpenChange={setSlashCommandConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>重置上下文</AlertDialogTitle>
+            <AlertDialogTitle>内部指令</AlertDialogTitle>
             <AlertDialogDescription>
-              确定要重置当前上下文吗？后续操作将会基于新的上下文进行。
+              消息以 / 开头，会被系统识别成内部指令。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                sendResetSession()
-                setResetDialogOpen(false)
-              }}
-            >
-              确认
+            <AlertDialogAction onClick={() => void sendCurrentInput()}>
+              确认发送
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
     </div>
   )
 }

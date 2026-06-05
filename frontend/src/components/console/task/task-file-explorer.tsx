@@ -40,8 +40,8 @@ import React from "react"
 import { toast } from "sonner"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { parseDiff, Diff, Hunk } from "react-diff-view"
-import "react-diff-view/style/index.css"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { UnifiedDiffViewer } from "./unified-diff-viewer"
 
 interface TaskFileExplorerProps {
   className?: string
@@ -102,18 +102,56 @@ const getLanguageMode = (fileName: string): string => {
   return modeMap[ext || ''] || 'text'
 }
 
-const MAX_FILE_SIZE = 100 * 1024 // 100KB
+const MAX_FILE_SIZE = 500 * 1024 // 500KB
+
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico']
 
 const BINARY_EXTENSIONS = [
-  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico',
+  ...IMAGE_EXTENSIONS,
   '.mp4', '.webm', '.ogv', '.mov', '.avi', '.mkv', '.mp3', '.wav', '.ogg', '.aac', '.flac', '.m4a', '.wma',
   '.pdf', '.zip', '.tar', '.gz', '.rar', '.7z', '.exe', '.dll', '.so', '.dylib',
   '.woff', '.woff2', '.ttf', '.otf', '.eot',
 ]
 
+function getPathExtension(path: string): string {
+  const lastDotIndex = path.lastIndexOf('.')
+  return lastDotIndex >= 0 ? path.substring(lastDotIndex).toLowerCase() : ''
+}
+
 function isBinaryExtension(path: string): boolean {
-  const ext = path.substring(path.lastIndexOf('.')).toLowerCase()
-  return BINARY_EXTENSIONS.includes(ext)
+  return BINARY_EXTENSIONS.includes(getPathExtension(path))
+}
+
+function isImageExtension(path: string): boolean {
+  return IMAGE_EXTENSIONS.includes(getPathExtension(path))
+}
+
+function getImageMimeType(path: string): string {
+  const mimeMap: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.bmp': 'image/bmp',
+    '.ico': 'image/x-icon',
+  }
+  return mimeMap[getPathExtension(path)] || 'application/octet-stream'
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize)
+    binary += String.fromCharCode(...chunk)
+  }
+  return btoa(binary)
+}
+
+function createImageDataUrl(path: string, bytes: Uint8Array): string {
+  return `data:${getImageMimeType(path)};base64,${bytesToBase64(bytes)}`
 }
 
 function tryDecodeAsText(bytes: Uint8Array): { text: string; isText: boolean } {
@@ -132,6 +170,8 @@ interface FileItem {
   content: string | null
   isBinary: boolean
   isTooLarge: boolean
+  isImage: boolean
+  imageDataUrl: string | null
 }
 
 type FilePanelMode = "tree" | "changes"
@@ -168,7 +208,7 @@ const FileNode = ({ file, depth, onFileSelect, fileChangesMap, envid, onRefresh,
       </div>
       <div className="relative size-5 shrink-0 flex items-center justify-center">
         {hasChanges && (
-          <span className="text-[10px] font-medium text-amber-600 dark:text-amber-500 group-hover:opacity-0 transition-opacity">●</span>
+          <span className="text-[10px] font-medium text-warning group-hover:opacity-0 transition-opacity">●</span>
         )}
         <div className="absolute inset-0 flex items-center justify-center">
           <FileActionsDropdown file={file} envid={envid} onRefresh={onRefresh} onSuccess={onRefresh} />
@@ -240,6 +280,12 @@ const DirNode = forwardRef<DirNodeRef, {
     setExpanded(open)
     if (open && !loaded) fetchChildren(true)
   }, [loaded, fetchChildren])
+
+  useEffect(() => {
+    if (expanded && !loaded) {
+      void fetchChildren(true)
+    }
+  }, [expanded, fetchChildren, loaded])
 
   const hasChangesInChildren = useMemo(() => {
     if (fileChangesMap.has(fullPath)) return true
@@ -313,7 +359,7 @@ const DirNode = forwardRef<DirNodeRef, {
           </div>
         </CollapsibleTrigger>
         <div className="relative size-5 shrink-0 flex items-center justify-center">
-          {hasChangesInChildren && <span className="text-[10px] font-medium text-amber-600 dark:text-amber-500 group-hover:opacity-0 transition-opacity">●</span>}
+          {hasChangesInChildren && <span className="text-[10px] font-medium text-warning group-hover:opacity-0 transition-opacity">●</span>}
           <div className="absolute inset-0 flex items-center justify-center">
             <FileActionsDropdown file={file} envid={envid} onRefresh={async () => { await refresh(); onRefresh?.() }} onSuccess={async () => { await refresh(); onRefresh?.() }} />
           </div>
@@ -485,9 +531,11 @@ export const TaskFileExplorer = ({
     const bytes = await fetchFileContent(path)
     if (!bytes) return null
     const isBinaryByExt = isBinaryExtension(path)
+    const isImage = isImageExtension(path)
     const isTooLarge = bytes.length > MAX_FILE_SIZE
     const { text, isText } = isBinaryByExt ? { text: '', isText: false } : tryDecodeAsText(bytes)
     const isBinary = isBinaryByExt || !isText
+    const imageDataUrl = isImage ? createImageDataUrl(path, bytes) : null
     const file: FileItem = {
       name: path.split('/').pop() || path,
       path,
@@ -495,6 +543,8 @@ export const TaskFileExplorer = ({
       content: isText ? text : null,
       isBinary,
       isTooLarge,
+      isImage,
+      imageDataUrl,
     }
     setDiffContent("")
     setDiffLoading(false)
@@ -511,18 +561,10 @@ export const TaskFileExplorer = ({
 
   const handleFileSelect = useCallback((path: string, file: RepoFileStatus) => {
     if (file.entry_mode === RepoFileEntryMode.RepoEntryModeTree || file.entry_mode === RepoFileEntryMode.RepoEntryModeSubmodule) return
-    if (currentFile?.path === path) {
-      clearCurrentFile()
-      return
-    }
     openFile(path)
-  }, [clearCurrentFile, currentFile?.path, openFile])
+  }, [openFile])
 
   const handleChangedFileSelect = useCallback((path: string) => {
-    if (currentFile?.path === path) {
-      clearCurrentFile()
-      return
-    }
     setFileLoading(false)
     setDiffContent("")
     setDiffLoading(false)
@@ -533,8 +575,10 @@ export const TaskFileExplorer = ({
       content: null,
       isBinary: false,
       isTooLarge: false,
+      isImage: false,
+      imageDataUrl: null,
     })
-  }, [clearCurrentFile, currentFile?.path])
+  }, [])
 
   const switchPanelMode = useCallback((mode: FilePanelMode) => {
     if (mode === panelMode) {
@@ -565,7 +609,14 @@ export const TaskFileExplorer = ({
 
   const renderFileDiff = () => {
     if (!currentFile) return null
-    if (diffLoading) {
+    return <UnifiedDiffViewer diffText={diffContent} loading={diffLoading} />
+  }
+
+  const renderFileContent = () => {
+    if (!currentFile) {
+      return null
+    }
+    if (fileLoading) {
       return (
         <Empty className="w-full h-full min-h-0">
           <EmptyHeader>
@@ -577,58 +628,9 @@ export const TaskFileExplorer = ({
         </Empty>
       )
     }
-
-    const diffFiles = diffContent ? parseDiff(diffContent) : []
-    if (diffFiles.length > 0 && diffFiles.some((file) => file.hunks?.length)) {
-      return (
-        <div className="h-full overflow-auto" style={{ "--diff-font-family": "var(--font-code)" } as React.CSSProperties}>
-          <style>{`
-            .task-file-preview-diff .diff-line td:nth-child(2) {
-              border-left: 1px var(--border) solid;
-            }
-          `}</style>
-          <div className="text-xs rounded-md overflow-x-auto bg-muted/30">
-            {diffFiles.map((file, index) => (
-              <Diff key={index} viewType="split" diffType={file.type} hunks={file.hunks} gutterType="none" hunkClassName="task-file-preview-diff">
-                {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
-              </Diff>
-            ))}
-          </div>
-        </div>
-      )
-    }
-
-    return (
-      <Empty className="w-full h-full min-h-0">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <IconReport className="size-6" />
-          </EmptyMedia>
-          <EmptyDescription>当前文件暂无变更</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    )
-  }
-
-  const renderFileContent = () => {
-    if (!currentFile) {
-      return null
-    }
-    if (fileLoading) {
-      return (
-        <Empty className="border border-dashed w-full h-full min-h-0">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <IconLoader className="size-6 animate-spin" />
-            </EmptyMedia>
-            <EmptyDescription>加载中...</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      )
-    }
     if (currentFile.isTooLarge) {
       return (
-        <Empty className="border border-dashed w-full h-full min-h-0">
+        <Empty className="w-full h-full min-h-0">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <IconFileText className="size-6 opacity-50" />
@@ -638,9 +640,20 @@ export const TaskFileExplorer = ({
         </Empty>
       )
     }
+    if (currentFile.isImage && currentFile.imageDataUrl) {
+      return (
+        <div className="flex h-full w-full items-center justify-center overflow-auto bg-muted/20 p-3">
+          <img
+            src={currentFile.imageDataUrl}
+            alt={currentFile.name}
+            className="max-h-full max-w-full object-contain"
+          />
+        </div>
+      )
+    }
     if (currentFile.isBinary) {
       return (
-        <Empty className="border border-dashed w-full h-full min-h-0">
+        <Empty className="w-full h-full min-h-0">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <IconFileText className="size-6 opacity-50" />
@@ -684,7 +697,7 @@ export const TaskFileExplorer = ({
           )}
         </div>
         <div className="flex-1 min-h-0 flex flex-col">
-          <Empty className="border border-dashed w-full flex-1 min-h-0">
+          <Empty className="w-full flex-1 min-h-0">
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <IconCloudOff className="size-6" />
@@ -750,13 +763,13 @@ export const TaskFileExplorer = ({
               </div>
               <div className="flex items-center gap-1 shrink-0 tabular-nums text-xs font-medium">
                 {additions > 0 && (
-                  <span className="text-green-700 dark:text-green-400">+{additions}</span>
+                  <span className="text-success">+{additions}</span>
                 )}
                 {deletions > 0 && (
-                  <span className="text-red-700 dark:text-red-400">-{deletions}</span>
+                  <span className="text-danger">-{deletions}</span>
                 )}
                 {additions === 0 && deletions === 0 && change?.status && (
-                  <span className="text-amber-600 dark:text-amber-500">{change.status}</span>
+                  <span className="text-warning">{change.status}</span>
                 )}
               </div>
             </div>
@@ -767,7 +780,7 @@ export const TaskFileExplorer = ({
   }
 
   const fileListPanel = (
-    <div className="flex flex-col min-h-0 flex-1">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex-1 min-h-0 overflow-y-auto py-1 flex flex-col">
         {panelMode === "tree" ? (
           <DirNode
@@ -790,10 +803,14 @@ export const TaskFileExplorer = ({
   )
 
   const previewPanel = (
-    <div className="flex flex-col min-h-0 flex-1 bg-background">
+    <div className="flex h-full min-h-0 w-full flex-col bg-background">
       <div className="flex-1 min-h-0 overflow-hidden">{renderPreviewContent()}</div>
     </div>
   )
+
+  const dialogTitle = currentFile
+    ? panelMode === "changes" ? `文件变更：${currentFile.name}` : `文件预览：${currentFile.name}`
+    : "文件详情"
 
   return (
     <div className={cn("flex flex-col h-full min-h-0", className)}>
@@ -853,22 +870,20 @@ export const TaskFileExplorer = ({
             )}
           </div>
         </div>
-        <div className="flex flex-1 min-h-0">
-          <div
-            className={cn(
-              "min-h-0 flex flex-col overflow-hidden",
-              currentFile ? "w-[180px] shrink-0" : "flex-1",
-            )}
-          >
-            {fileListPanel}
-          </div>
-          {currentFile && (
-            <div className="min-h-0 min-w-0 flex-1 flex flex-col overflow-hidden border-l bg-background">
-              {previewPanel}
-            </div>
-          )}
+        <div className="flex flex-1 min-h-0 min-w-0 flex-col">
+          {fileListPanel}
         </div>
       </div>
+      <Dialog open={!!currentFile} onOpenChange={(open) => { if (!open) clearCurrentFile() }}>
+        <DialogContent className="flex h-[80vh] max-h-[80vh] max-w-[90vw] flex-col overflow-hidden md:max-w-[70vw]">
+          <DialogHeader>
+            <DialogTitle className="truncate">{dialogTitle}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
+            {previewPanel}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

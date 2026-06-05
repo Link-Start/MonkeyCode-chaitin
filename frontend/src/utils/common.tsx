@@ -1,16 +1,13 @@
 import { Badge } from "@/components/ui/badge"
 import { Folder } from "lucide-react"
 import Icon from "@/components/common/Icon"
-import { IconAssembly, IconBrandChrome, IconBrandPython, IconBug, IconCircleCheckFilled, IconCircleXFilled, IconDeviceGamepad2, IconFileText, IconHelpHexagon, IconPalette, IconPuzzle, IconShieldChevron, IconTerminal2, IconTestPipe } from "@tabler/icons-react"
+import { IconAssembly, IconBrandChrome, IconBrandPython, IconBug, IconDeviceGamepad2, IconFileText, IconHelpHexagon, IconPalette, IconPuzzle, IconShieldChevron, IconTerminal2, IconTestPipe } from "@tabler/icons-react"
 import Cap from "@cap.js/widget"
 import { HoverCardContent } from "@/components/ui/hover-card"
-import { ConstsHostStatus, ConstsInterfaceType, ConstsOwnerType, ConstsProjectIssueStatus, GitInChaitinNetAiMonkeycodeMonkeycodeAiEntTypesConditionType, TaskflowVirtualMachineStatus, type DomainHost, type DomainImage, type DomainModel, type DomainOwner, type DomainProviderModelListItem, type DomainSubscriptionResp, type DomainVirtualMachine, type GitInChaitinNetAiMonkeycodeMonkeycodeAiEntTypesCondition } from "@/api/Api"
+import { ConstsHostStatus, ConstsInterfaceType, ConstsOwnerType, ConstsProjectIssueStatus, GitInChaitinNetAiMonkeycodeMonkeycodeAiEntTypesConditionType, TaskflowVirtualMachineStatus, type DomainHost, type DomainImage, type DomainModel, type DomainOwner, type DomainProjectTask, type DomainProviderModelListItem, type DomainSubscriptionResp, type DomainUser, type DomainVirtualMachine, type GitInChaitinNetAiMonkeycodeMonkeycodeAiEntTypesCondition } from "@/api/Api"
 import { apiRequest } from "./requestUtils"
 import { remark } from "remark"
 import strip from "strip-markdown"
-import streamSaver from "streamsaver"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import dayjs from "dayjs"
 
 /** GitHub App 安装地址：https://monkeycode-ai.com 用正式环境，其他域名用开发环境 */
 export function getGithubAppInstallUrl(): string {
@@ -117,7 +114,119 @@ export function getBrandFromModelName(modelName: string): string {
     return 'minimax';
   }
 
+  if (lowerName.includes('mimo')) {
+    return 'mimo';
+  }
+
   return 'openai';
+}
+
+export function getBrandFromModel(model?: Pick<DomainModel, 'model' | 'owner'> | null): string {
+  const modelName = model?.model || '';
+  if (
+    model?.owner?.type === ConstsOwnerType.OwnerTypePublic
+    && modelName.toLowerCase().includes('gpt')
+  ) {
+    return 'model';
+  }
+
+  return getBrandFromModelName(modelName);
+}
+
+export function getModelDisplayName(modelName?: string | null): string {
+  if (!modelName) {
+    return modelName || '';
+  }
+
+  const builtinModelName = getBuiltinModelName(modelName);
+  if (builtinModelName === 'monkeycode-basic') {
+    return '基础模型';
+  }
+
+  if (builtinModelName === 'monkeycode-pro') {
+    return '专业模型';
+  }
+
+  if (builtinModelName === 'monkeycode-ultra') {
+    return '旗舰模型';
+  }
+
+  return modelName;
+}
+
+export function stripBuiltinPublicModelPackagePrefix(modelName?: string | null): string {
+  return modelName?.trim().replace(/^monkeycode-[^/]+\//, '') || '';
+}
+
+export function getModelDisplayNameForModel(model?: Pick<DomainModel, 'model' | 'remark'> | null): string {
+  const remark = model?.remark?.trim();
+  if (remark) {
+    return stripBuiltinPublicModelPackagePrefix(remark);
+  }
+
+  return getModelDisplayName(model?.model);
+}
+
+export function getBuiltinModelName(modelName?: string | null): "monkeycode-basic" | "monkeycode-pro" | "monkeycode-ultra" | undefined {
+  const normalizedModelName = modelName?.trim().toLowerCase();
+  if (!normalizedModelName) {
+    return undefined;
+  }
+
+  if (normalizedModelName.startsWith('monkeycode-basic')) {
+    return 'monkeycode-basic';
+  }
+
+  if (normalizedModelName.startsWith('monkeycode-pro')) {
+    return 'monkeycode-pro';
+  }
+
+  if (normalizedModelName.startsWith('monkeycode-ultra')) {
+    return 'monkeycode-ultra';
+  }
+
+  return undefined;
+}
+
+export function isBuiltinPublicModelPackage(modelName?: string | null): boolean {
+  return stripBuiltinPublicModelPackagePrefix(modelName) !== (modelName?.trim() || '');
+}
+
+export type ModelPricingItem = {
+  model: string;
+  credits: number;
+  score: number;
+  tags: string[];
+}
+
+export const modelPricingList: readonly ModelPricingItem[] = [
+  { model: "minimax-m3", credits: 250, score: 637, tags: [] },
+  { model: "minimax-m2.7", credits: 250, score: 637, tags: [] },
+  { model: "minimax-m2.5", credits: 150, score: 513, tags: [] },
+  { model: "deepseek-v4-pro", credits: 600, score: 852, tags: [] },
+  { model: "qwen3.5-plus", credits: 150, score: 538, tags: ["长上下文"] },
+  { model: "gpt-5.5", credits: 1000, score: 967, tags: ["最新", "很强"] },
+  { model: "gpt-5.4", credits: 600, score: 922, tags: ["能力强"] },
+  { model: "gpt-5.3-codex", credits: 500, score: 918, tags: ["能力强"] },
+  { model: "glm-5.1", credits: 800, score: 904, tags: [] },
+  { model: "glm-5", credits: 600, score: 847, tags: [] },
+  { model: "glm-4.7", credits: 400, score: 709, tags: [] },
+  { model: "kimi-k2.6", credits: 700, score: 912, tags: [] },
+  { model: "kimi-k2.5", credits: 150, score: 579, tags: [] },
+  { model: "qwen3.6-max", credits: 600, score: 892, tags: ["长上下文"] },
+  { model: "qwen3.6-plus", credits: 300, score: 751, tags: ["长上下文"] },
+]
+
+export const TASK_PROMPT_PLACEHOLDER = "你想让 MonkeyCode 做什么？例如：开发一个小游戏、实现一个新功能、做数据分析、做技术调研、写毕业论文等等。。。"
+
+export function getModelPricingItem(modelName?: string): ModelPricingItem | undefined {
+  if (!modelName) {
+    return undefined
+  }
+
+  const normalizedModelName = modelName.trim().toLowerCase()
+  const builtinModelName = getBuiltinModelName(normalizedModelName)
+  return modelPricingList.find((item) => item.model.toLowerCase() === (builtinModelName || normalizedModelName))
 }
 
 export function formatMemory(bytes?: number): string {
@@ -128,8 +237,8 @@ export function formatMemory(bytes?: number): string {
 
 export function formatTokens(tokens?: number): string {
   if (tokens === undefined || tokens === null) return ""
-  if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`
-  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}K`
+  if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}m`
+  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`
   return tokens.toString()
 }
 
@@ -380,57 +489,57 @@ export function getOwnerTypeBadge(owner?: DomainOwner): React.ReactNode {
   }
 }
 
-export function getPublicModelMetaBadges(model?: DomainModel): React.ReactNode {
-  if (!model || model.owner?.type !== ConstsOwnerType.OwnerTypePublic) {
-    return null
-  }
-
-  return (
-    <>
-      {model.is_free === true && <Badge>免费</Badge>}
-      {model.access_level === "pro" && <Badge variant="secondary">专业版</Badge>}
-    </>
-  )
-}
-
 export function canUseModelBySubscription(model?: DomainModel, subscription?: DomainSubscriptionResp | null): boolean {
   if (!model) {
     return false
   }
 
-  if (subscription?.plan === "pro") {
-    return true
+  const builtinModelName = getBuiltinModelName(model.model)
+  if (builtinModelName === "monkeycode-pro") {
+    return subscription?.plan === "pro" || subscription?.plan === "flagship" || subscription?.plan === "ultra"
   }
 
-  return model.access_level !== "pro"
+  if (builtinModelName === "monkeycode-ultra") {
+    return subscription?.plan === "flagship" || subscription?.plan === "ultra"
+  }
+
+  return true
 }
 
-export function getModelHealthBadge(model?: DomainModel): React.ReactNode {
-  if (!model) {
-    return null
+export function hasProSubscription(subscription?: DomainSubscriptionResp | null): boolean {
+  return subscription?.plan === "pro" || subscription?.plan === "flagship" || subscription?.plan === "ultra"
+}
+
+export function getSubscriptionPlanLabel(plan?: string | null): string {
+  switch (plan) {
+    case "flagship":
+    case "ultra":
+      return "旗舰会员"
+    case "pro":
+      return "专业会员"
+    case "basic":
+      return "基础会员"
+    default:
+      return "基础会员"
   }
+}
 
-  return <Tooltip>
-    <TooltipTrigger asChild>
-      {model.last_check_success ? (
-        <IconCircleCheckFilled className="text-teal-500 size-4 shrink-0" />
-      ) : (
-        <IconCircleXFilled className="text-red-500 size-4 shrink-0" />
-      )}
-    </TooltipTrigger>
-    <TooltipContent>
-      {model.last_check_at ? (
-        <p>检测于 {dayjs(model.last_check_at * 1000).fromNow()}</p>
-      ) : (
-        <p>尚未进行健康检查</p>
-      )}
-      {model.last_check_error && <p className="max-w-xl break-all whitespace-pre-wrap mt-2">
-        {model.last_check_error}
-      </p>}
-    </TooltipContent>
-  </Tooltip>
+export function getSubscriptionPlanShortLabel(plan?: string | null): string {
+  switch (plan) {
+    case "flagship":
+    case "ultra":
+      return "旗舰会员"
+    case "pro":
+      return "专业会员"
+    case "basic":
+      return "基础会员"
+    default:
+      return "基础会员"
+  }
+}
 
-  return <Badge variant="secondary">1231</Badge>
+export function canManageDevEnvironment(user?: DomainUser | null): boolean {
+  return Boolean(user?.team?.id)
 }
 
 export function getHostBadges(host?: DomainHost): React.ReactNode {
@@ -440,7 +549,6 @@ export function getHostBadges(host?: DomainHost): React.ReactNode {
 
   return <>
     {getHostStatusBadge(host.status)}
-    {host.is_default && <Badge>默认</Badge>}
     {getOwnerTypeBadge(host.owner)}
     {host.arch !== 'x86_64' && <Badge variant="secondary" className="hidden sm:inline">{host.arch}</Badge>}
     <Badge variant="secondary" className="hidden sm:inline">{host.cores} 核</Badge>
@@ -530,23 +638,16 @@ export async function packFilesAsZip(
 }
 
 /**
- * 将文件列表打包成 zip 并上传
- * @param files 文件列表
- * @param zipFilename 打包后的 zip 文件名，默认为 'project-files.zip'
+ * 使用后端返回的预签名地址上传文件
+ * @param file 要上传的文件
  * @returns 上传成功后的访问地址和文件名，失败时抛出错误
  */
-export async function packAndUploadFilesAsZip(
-  files: File[],
-  zipFilename: string = 'project-files.zip'
+export async function uploadFileWithPresignedUrl(
+  file: File
 ): Promise<{ accessUrl: string; filename: string }> {
-  const zipFile = await packFilesAsZip(files, zipFilename)
-
-  // 获取预签名上传地址
   const presignResult = await new Promise<{ upload_url: string; access_url: string }>((resolve, reject) => {
     apiRequest('v1UploaderPresignCreate', {
-      filename: zipFile.name,
-      usage: 'repo',
-      expires: 600,
+      filename: file.name,
     }, [], (resp) => {
       if (resp.code === 0 && resp.data?.upload_url && resp.data?.access_url) {
         resolve({ upload_url: resp.data.upload_url, access_url: resp.data.access_url })
@@ -558,15 +659,9 @@ export async function packAndUploadFilesAsZip(
     })
   })
 
-  const { upload_url, access_url } = presignResult
-
-  // 上传文件
-  const uploadResponse = await fetch(upload_url, {
+  const uploadResponse = await fetch(presignResult.upload_url, {
     method: 'PUT',
-    body: zipFile,
-    headers: {
-      'Content-Type': 'application/zip',
-    },
+    body: new Blob([file]),
   })
 
   if (!uploadResponse.ok) {
@@ -574,9 +669,23 @@ export async function packAndUploadFilesAsZip(
   }
 
   return {
-    accessUrl: access_url,
-    filename: zipFile.name,
+    accessUrl: presignResult.access_url,
+    filename: file.name,
   }
+}
+
+/**
+ * 将文件列表打包成 zip 并上传
+ * @param files 文件列表
+ * @param zipFilename 打包后的 zip 文件名，默认为 'project-files.zip'
+ * @returns 上传成功后的访问地址和文件名，失败时抛出错误
+ */
+export async function packAndUploadFilesAsZip(
+  files: File[],
+  zipFilename: string = 'project-files.zip'
+): Promise<{ accessUrl: string; filename: string }> {
+  const zipFile = await packFilesAsZip(files, zipFilename)
+  return uploadFileWithPresignedUrl(zipFile)
 }
 
 /**
@@ -591,6 +700,29 @@ export function stripMarkdown(markdown: string | undefined): string {
 
   const result = remark().use(strip).processSync(markdown)
   return String(result).trim()
+}
+
+export function getTaskDisplayName(task?: Pick<DomainProjectTask, "title" | "summary" | "content"> | null, fallback = ""): string {
+  if (!task) {
+    return fallback
+  }
+
+  const title = task.title?.trim()
+  if (title) {
+    return title
+  }
+
+  const summary = task.summary?.trim()
+  if (summary) {
+    return summary
+  }
+
+  const content = stripMarkdown(task.content)
+  if (content) {
+    return content
+  }
+
+  return fallback
 }
 
 /**
@@ -612,19 +744,50 @@ export function getFileExtension(filename: string): string {
 }
 
 export function selectPreferredTaskModel(models: DomainModel[], subscription?: DomainSubscriptionResp | null): string {
-  const accessibleModels = models.filter((model) => canUseModelBySubscription(model, subscription))
+  const planPreferredModel = subscription?.plan === "pro"
+    ? "monkeycode-pro"
+    : subscription?.plan === "flagship" || subscription?.plan === "ultra"
+      ? "monkeycode-ultra"
+      : "monkeycode-basic"
+  const planModel = models
+    .filter((model) => (
+      model.id
+      && getBuiltinModelName(model.model) === planPreferredModel
+      && canUseModelBySubscription(model, subscription)
+    ))
+    .sort((left, right) => {
+      const weightDiff = (right.weight || 0) - (left.weight || 0)
+      if (weightDiff !== 0) {
+        return weightDiff
+      }
 
-  const defaultModelId = accessibleModels.find((model) => model.is_default && model.id)?.id
-  if (defaultModelId) {
-    return defaultModelId
+      return (left.model || "").localeCompare(right.model || "")
+    })[0]
+
+  if (planModel?.id) {
+    return planModel.id
   }
 
-  return accessibleModels.find((model) => (
-    model.id
-    && model.owner?.type === ConstsOwnerType.OwnerTypePublic
-    && model.access_level === "basic"
-    && model.is_free === true
-  ))?.id || ""
+  const preferredModel = models
+    .filter((model) => (
+      model.id
+      && model.owner?.type === ConstsOwnerType.OwnerTypePublic
+      && canUseModelBySubscription(model, subscription)
+    ))
+    .sort((left, right) => {
+      const weightDiff = (right.weight || 0) - (left.weight || 0)
+      if (weightDiff !== 0) {
+        return weightDiff
+      }
+
+      return (left.model || "").localeCompare(right.model || "")
+    })[0]
+
+  if (!preferredModel?.id) {
+    return ""
+  }
+
+  return preferredModel.id
 }
 
 
@@ -633,7 +796,7 @@ export function selectHost(hosts: DomainHost[], followDefault: boolean = true): 
   let result = 'public_host'
 
   if (followDefault) {
-    result = onlineHosts.find(host => host.is_default)?.id || onlineHosts[0]?.id || result
+    result = onlineHosts[0]?.id || result
   }
 
   return result
@@ -647,23 +810,75 @@ export function selectImage(images: DomainImage[], followDefault: boolean = true
   })?.id || result
 
   if (followDefault) {
-    result = images.find(image => image.is_default)?.id || result
+    result = images[0]?.id || result
   }
 
   return result
 }
 
 /**
- * 下载文件（流式下载，不占用内存）
+ * 下载文件。传入 writableStream 时使用 fetch 流式写入；否则交给浏览器原生下载。
  * @param envid 环境 ID
  * @param path 文件路径
  * @param filename 下载时的文件名（可选，默认从路径中提取）
- * @throws 网络错误或下载失败时抛出错误
+ * @throws 流式写入模式下，网络错误或下载失败时抛出错误
  */
-export async function downloadFile(envid: string, path: string, filename?: string): Promise<void> {
-  const url = `/api/v1/users/files/download?id=${encodeURIComponent(envid)}&path=${encodeURIComponent(path)}`
+export interface DownloadFileProgress {
+  loaded: number
+  total: number | null
+  percent: number | null
+}
+
+export function getDownloadFileUrl(envid: string, path: string, filename?: string): string {
+  const params = new URLSearchParams({
+    id: envid,
+    path,
+  })
+
+  if (filename) {
+    params.set('filename', filename)
+  }
+
+  return `/api/v1/users/files/download?${params.toString()}`
+}
+
+export function nativeDownloadFile(envid: string, path: string, filename?: string): void {
+  const downloadFilename = filename || getFileName(path)
+  const link = document.createElement('a')
+
+  link.href = getDownloadFileUrl(envid, path, downloadFilename)
+  link.download = downloadFilename
+  link.style.display = 'none'
+
+  document.body.appendChild(link)
+  link.click()
+  window.setTimeout(() => {
+    link.remove()
+  }, 0)
+}
+
+export async function downloadFile(
+  envid: string,
+  path: string,
+  filename?: string,
+  onProgress?: (progress: DownloadFileProgress) => void,
+  signal?: AbortSignal,
+  writableStream?: WritableStream<Uint8Array>,
+): Promise<void> {
+  const downloadFilename = filename || getFileName(path)
+
+  if (!writableStream) {
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError')
+    }
+
+    nativeDownloadFile(envid, path, downloadFilename)
+    return
+  }
+
+  const url = getDownloadFileUrl(envid, path, downloadFilename)
   
-  const response = await fetch(url)
+  const response = await fetch(url, { signal })
   
   // 检查 x-internal-error header，如果存在则表示下载失败
   const internalError = response.headers.get('x-internal-error')
@@ -674,17 +889,54 @@ export async function downloadFile(envid: string, path: string, filename?: strin
   if (!response.body) {
     throw new Error('无法获取文件流')
   }
+
+  if (!response.ok) {
+    throw new Error(`下载失败（${response.status}）`)
+  }
   
-  const downloadFilename = filename || getFileName(path)
   const contentLength = response.headers.get('content-length')
+  const total = contentLength ? Number(contentLength) : null
   
-  // 创建可写流，直接写入磁盘（流式下载）
-  const fileStream = streamSaver.createWriteStream(downloadFilename, {
-    size: contentLength ? Number(contentLength) : undefined
+  // 使用调用方提供的浏览器/系统写入流，避免把大文件缓存在内存里。
+  const fileStream = writableStream
+  const reader = response.body.getReader()
+  const writer = fileStream.getWriter()
+  let loaded = 0
+
+  onProgress?.({
+    loaded,
+    total,
+    percent: total && total > 0 ? 0 : null,
   })
-  
-  // 将 response body 流式写入文件
-  await response.body.pipeTo(fileStream)
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+
+      if (!value) {
+        continue
+      }
+
+      await writer.write(value)
+      loaded += value.byteLength
+
+      onProgress?.({
+        loaded,
+        total,
+        percent: total && total > 0 ? Math.min((loaded / total) * 100, 100) : null,
+      })
+    }
+
+    await writer.close()
+  } catch (error) {
+    await writer.abort(error)
+    throw error
+  } finally {
+    reader.releaseLock()
+  }
 }
 
 
@@ -754,31 +1006,31 @@ export function deepMerge<T extends Record<string, any>>(target: T, source: Part
 
 export const modelProviderList: Record<string, DomainProviderModelListItem[]> = {
   "https://api.minimax.io/v1": [
+    {"model": "MiniMax-M3"},
     {"model": "MiniMax-M2.7"},
     {"model": "MiniMax-M2.5"},
     {"model": "MiniMax-M2.1"},
-    {"model": "MiniMax-M2.1-lightning"},
     {"model": "MiniMax-M2"}
   ],
   "https://api.minimax.io/anthropic": [
+    {"model": "MiniMax-M3"},
     {"model": "MiniMax-M2.7"},
     {"model": "MiniMax-M2.5"},
     {"model": "MiniMax-M2.1"},
-    {"model": "MiniMax-M2.1-lightning"},
     {"model": "MiniMax-M2"}
   ],
   "https://api.minimaxi.com/v1": [
+    {"model": "MiniMax-M3"},
     {"model": "MiniMax-M2.7"},
     {"model": "MiniMax-M2.5"},
     {"model": "MiniMax-M2.1"},
-    {"model": "MiniMax-M2.1-lightning"},
     {"model": "MiniMax-M2"}
   ],
   "https://api.minimaxi.com/anthropic": [
+    {"model": "MiniMax-M3"},
     {"model": "MiniMax-M2.7"},
     {"model": "MiniMax-M2.5"},
     {"model": "MiniMax-M2.1"},
-    {"model": "MiniMax-M2.1-lightning"},
     {"model": "MiniMax-M2"}
   ]
 }

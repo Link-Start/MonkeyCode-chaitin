@@ -14,6 +14,7 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/domain"
 	"github.com/chaitin/MonkeyCode/backend/errcode"
 	"github.com/chaitin/MonkeyCode/backend/pkg"
+	"github.com/chaitin/MonkeyCode/backend/pkg/captcha"
 	"github.com/chaitin/MonkeyCode/backend/pkg/tasker"
 )
 
@@ -77,10 +78,29 @@ func WithProjectHook(hook domain.ProjectHook) BridgeOption {
 	}
 }
 
+// WithTeamHook 注入团队成员变更回调
+func WithTeamHook(hook domain.TeamHook) BridgeOption {
+	return func(i *do.Injector) {
+		do.ProvideValue(i, hook)
+	}
+}
+
 // WithSiteResolver 注入站点解析器
 func WithSiteResolver(resolver domain.SiteResolver) BridgeOption {
 	return func(i *do.Injector) {
 		do.ProvideValue(i, resolver)
+	}
+}
+
+func WithCaptcha(captcha *captcha.Captcha) BridgeOption {
+	return func(i *do.Injector) {
+		do.OverrideValue(i, captcha)
+	}
+}
+
+func WithMemberManager(mm domain.MemberManager) BridgeOption {
+	return func(i *do.Injector) {
+		do.OverrideValue(i, mm)
 	}
 }
 
@@ -107,5 +127,7 @@ func Register(e *echo.Echo, dir string, opts ...BridgeOption) error {
 		opt(injector)
 	}
 
-	return biz.RegisterAll(injector)
+	biz.RegisterAll(injector)
+	biz.InvokeAll(injector)
+	return nil
 }

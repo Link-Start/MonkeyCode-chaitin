@@ -7,7 +7,6 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"github.com/chaitin/MonkeyCode/backend/consts"
 	"github.com/chaitin/MonkeyCode/backend/db/predicate"
 	"github.com/google/uuid"
 )
@@ -72,6 +71,11 @@ func DeletedAt(v time.Time) predicate.VirtualMachine {
 	return predicate.VirtualMachine(sql.FieldEQ(FieldDeletedAt, v))
 }
 
+// AccessToken applies equality check predicate on the "access_token" field. It's identical to AccessTokenEQ.
+func AccessToken(v string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldEQ(FieldAccessToken, v))
+}
+
 // HostID applies equality check predicate on the "host_id" field. It's identical to HostIDEQ.
 func HostID(v string) predicate.VirtualMachine {
 	return predicate.VirtualMachine(sql.FieldEQ(FieldHostID, v))
@@ -132,17 +136,6 @@ func InternalIP(v string) predicate.VirtualMachine {
 	return predicate.VirtualMachine(sql.FieldEQ(FieldInternalIP, v))
 }
 
-// TTLKind applies equality check predicate on the "ttl_kind" field. It's identical to TTLKindEQ.
-func TTLKind(v consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	vc := string(v)
-	return predicate.VirtualMachine(sql.FieldEQ(FieldTTLKind, vc))
-}
-
-// TTL applies equality check predicate on the "ttl" field. It's identical to TTLEQ.
-func TTL(v int64) predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldEQ(FieldTTL, v))
-}
-
 // Version applies equality check predicate on the "version" field. It's identical to VersionEQ.
 func Version(v string) predicate.VirtualMachine {
 	return predicate.VirtualMachine(sql.FieldEQ(FieldVersion, v))
@@ -176,6 +169,11 @@ func GitIdentityID(v uuid.UUID) predicate.VirtualMachine {
 // IsRecycled applies equality check predicate on the "is_recycled" field. It's identical to IsRecycledEQ.
 func IsRecycled(v bool) predicate.VirtualMachine {
 	return predicate.VirtualMachine(sql.FieldEQ(FieldIsRecycled, v))
+}
+
+// ExpiredAt applies equality check predicate on the "expired_at" field. It's identical to ExpiredAtEQ.
+func ExpiredAt(v time.Time) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldEQ(FieldExpiredAt, v))
 }
 
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
@@ -236,6 +234,81 @@ func DeletedAtIsNil() predicate.VirtualMachine {
 // DeletedAtNotNil applies the NotNil predicate on the "deleted_at" field.
 func DeletedAtNotNil() predicate.VirtualMachine {
 	return predicate.VirtualMachine(sql.FieldNotNull(FieldDeletedAt))
+}
+
+// AccessTokenEQ applies the EQ predicate on the "access_token" field.
+func AccessTokenEQ(v string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldEQ(FieldAccessToken, v))
+}
+
+// AccessTokenNEQ applies the NEQ predicate on the "access_token" field.
+func AccessTokenNEQ(v string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldNEQ(FieldAccessToken, v))
+}
+
+// AccessTokenIn applies the In predicate on the "access_token" field.
+func AccessTokenIn(vs ...string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldIn(FieldAccessToken, vs...))
+}
+
+// AccessTokenNotIn applies the NotIn predicate on the "access_token" field.
+func AccessTokenNotIn(vs ...string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldNotIn(FieldAccessToken, vs...))
+}
+
+// AccessTokenGT applies the GT predicate on the "access_token" field.
+func AccessTokenGT(v string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldGT(FieldAccessToken, v))
+}
+
+// AccessTokenGTE applies the GTE predicate on the "access_token" field.
+func AccessTokenGTE(v string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldGTE(FieldAccessToken, v))
+}
+
+// AccessTokenLT applies the LT predicate on the "access_token" field.
+func AccessTokenLT(v string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldLT(FieldAccessToken, v))
+}
+
+// AccessTokenLTE applies the LTE predicate on the "access_token" field.
+func AccessTokenLTE(v string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldLTE(FieldAccessToken, v))
+}
+
+// AccessTokenContains applies the Contains predicate on the "access_token" field.
+func AccessTokenContains(v string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldContains(FieldAccessToken, v))
+}
+
+// AccessTokenHasPrefix applies the HasPrefix predicate on the "access_token" field.
+func AccessTokenHasPrefix(v string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldHasPrefix(FieldAccessToken, v))
+}
+
+// AccessTokenHasSuffix applies the HasSuffix predicate on the "access_token" field.
+func AccessTokenHasSuffix(v string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldHasSuffix(FieldAccessToken, v))
+}
+
+// AccessTokenIsNil applies the IsNil predicate on the "access_token" field.
+func AccessTokenIsNil() predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldIsNull(FieldAccessToken))
+}
+
+// AccessTokenNotNil applies the NotNil predicate on the "access_token" field.
+func AccessTokenNotNil() predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldNotNull(FieldAccessToken))
+}
+
+// AccessTokenEqualFold applies the EqualFold predicate on the "access_token" field.
+func AccessTokenEqualFold(v string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldEqualFold(FieldAccessToken, v))
+}
+
+// AccessTokenContainsFold applies the ContainsFold predicate on the "access_token" field.
+func AccessTokenContainsFold(v string) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldContainsFold(FieldAccessToken, v))
 }
 
 // HostIDEQ applies the EQ predicate on the "host_id" field.
@@ -978,150 +1051,6 @@ func InternalIPContainsFold(v string) predicate.VirtualMachine {
 	return predicate.VirtualMachine(sql.FieldContainsFold(FieldInternalIP, v))
 }
 
-// TTLKindEQ applies the EQ predicate on the "ttl_kind" field.
-func TTLKindEQ(v consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	vc := string(v)
-	return predicate.VirtualMachine(sql.FieldEQ(FieldTTLKind, vc))
-}
-
-// TTLKindNEQ applies the NEQ predicate on the "ttl_kind" field.
-func TTLKindNEQ(v consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	vc := string(v)
-	return predicate.VirtualMachine(sql.FieldNEQ(FieldTTLKind, vc))
-}
-
-// TTLKindIn applies the In predicate on the "ttl_kind" field.
-func TTLKindIn(vs ...consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	v := make([]any, len(vs))
-	for i := range v {
-		v[i] = string(vs[i])
-	}
-	return predicate.VirtualMachine(sql.FieldIn(FieldTTLKind, v...))
-}
-
-// TTLKindNotIn applies the NotIn predicate on the "ttl_kind" field.
-func TTLKindNotIn(vs ...consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	v := make([]any, len(vs))
-	for i := range v {
-		v[i] = string(vs[i])
-	}
-	return predicate.VirtualMachine(sql.FieldNotIn(FieldTTLKind, v...))
-}
-
-// TTLKindGT applies the GT predicate on the "ttl_kind" field.
-func TTLKindGT(v consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	vc := string(v)
-	return predicate.VirtualMachine(sql.FieldGT(FieldTTLKind, vc))
-}
-
-// TTLKindGTE applies the GTE predicate on the "ttl_kind" field.
-func TTLKindGTE(v consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	vc := string(v)
-	return predicate.VirtualMachine(sql.FieldGTE(FieldTTLKind, vc))
-}
-
-// TTLKindLT applies the LT predicate on the "ttl_kind" field.
-func TTLKindLT(v consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	vc := string(v)
-	return predicate.VirtualMachine(sql.FieldLT(FieldTTLKind, vc))
-}
-
-// TTLKindLTE applies the LTE predicate on the "ttl_kind" field.
-func TTLKindLTE(v consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	vc := string(v)
-	return predicate.VirtualMachine(sql.FieldLTE(FieldTTLKind, vc))
-}
-
-// TTLKindContains applies the Contains predicate on the "ttl_kind" field.
-func TTLKindContains(v consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	vc := string(v)
-	return predicate.VirtualMachine(sql.FieldContains(FieldTTLKind, vc))
-}
-
-// TTLKindHasPrefix applies the HasPrefix predicate on the "ttl_kind" field.
-func TTLKindHasPrefix(v consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	vc := string(v)
-	return predicate.VirtualMachine(sql.FieldHasPrefix(FieldTTLKind, vc))
-}
-
-// TTLKindHasSuffix applies the HasSuffix predicate on the "ttl_kind" field.
-func TTLKindHasSuffix(v consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	vc := string(v)
-	return predicate.VirtualMachine(sql.FieldHasSuffix(FieldTTLKind, vc))
-}
-
-// TTLKindIsNil applies the IsNil predicate on the "ttl_kind" field.
-func TTLKindIsNil() predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldIsNull(FieldTTLKind))
-}
-
-// TTLKindNotNil applies the NotNil predicate on the "ttl_kind" field.
-func TTLKindNotNil() predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldNotNull(FieldTTLKind))
-}
-
-// TTLKindEqualFold applies the EqualFold predicate on the "ttl_kind" field.
-func TTLKindEqualFold(v consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	vc := string(v)
-	return predicate.VirtualMachine(sql.FieldEqualFold(FieldTTLKind, vc))
-}
-
-// TTLKindContainsFold applies the ContainsFold predicate on the "ttl_kind" field.
-func TTLKindContainsFold(v consts.VirtualmachineTTLKind) predicate.VirtualMachine {
-	vc := string(v)
-	return predicate.VirtualMachine(sql.FieldContainsFold(FieldTTLKind, vc))
-}
-
-// TTLEQ applies the EQ predicate on the "ttl" field.
-func TTLEQ(v int64) predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldEQ(FieldTTL, v))
-}
-
-// TTLNEQ applies the NEQ predicate on the "ttl" field.
-func TTLNEQ(v int64) predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldNEQ(FieldTTL, v))
-}
-
-// TTLIn applies the In predicate on the "ttl" field.
-func TTLIn(vs ...int64) predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldIn(FieldTTL, vs...))
-}
-
-// TTLNotIn applies the NotIn predicate on the "ttl" field.
-func TTLNotIn(vs ...int64) predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldNotIn(FieldTTL, vs...))
-}
-
-// TTLGT applies the GT predicate on the "ttl" field.
-func TTLGT(v int64) predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldGT(FieldTTL, v))
-}
-
-// TTLGTE applies the GTE predicate on the "ttl" field.
-func TTLGTE(v int64) predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldGTE(FieldTTL, v))
-}
-
-// TTLLT applies the LT predicate on the "ttl" field.
-func TTLLT(v int64) predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldLT(FieldTTL, v))
-}
-
-// TTLLTE applies the LTE predicate on the "ttl" field.
-func TTLLTE(v int64) predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldLTE(FieldTTL, v))
-}
-
-// TTLIsNil applies the IsNil predicate on the "ttl" field.
-func TTLIsNil() predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldIsNull(FieldTTL))
-}
-
-// TTLNotNil applies the NotNil predicate on the "ttl" field.
-func TTLNotNil() predicate.VirtualMachine {
-	return predicate.VirtualMachine(sql.FieldNotNull(FieldTTL))
-}
-
 // VersionEQ applies the EQ predicate on the "version" field.
 func VersionEQ(v string) predicate.VirtualMachine {
 	return predicate.VirtualMachine(sql.FieldEQ(FieldVersion, v))
@@ -1555,6 +1484,56 @@ func ConditionsIsNil() predicate.VirtualMachine {
 // ConditionsNotNil applies the NotNil predicate on the "conditions" field.
 func ConditionsNotNil() predicate.VirtualMachine {
 	return predicate.VirtualMachine(sql.FieldNotNull(FieldConditions))
+}
+
+// ExpiredAtEQ applies the EQ predicate on the "expired_at" field.
+func ExpiredAtEQ(v time.Time) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldEQ(FieldExpiredAt, v))
+}
+
+// ExpiredAtNEQ applies the NEQ predicate on the "expired_at" field.
+func ExpiredAtNEQ(v time.Time) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldNEQ(FieldExpiredAt, v))
+}
+
+// ExpiredAtIn applies the In predicate on the "expired_at" field.
+func ExpiredAtIn(vs ...time.Time) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldIn(FieldExpiredAt, vs...))
+}
+
+// ExpiredAtNotIn applies the NotIn predicate on the "expired_at" field.
+func ExpiredAtNotIn(vs ...time.Time) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldNotIn(FieldExpiredAt, vs...))
+}
+
+// ExpiredAtGT applies the GT predicate on the "expired_at" field.
+func ExpiredAtGT(v time.Time) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldGT(FieldExpiredAt, v))
+}
+
+// ExpiredAtGTE applies the GTE predicate on the "expired_at" field.
+func ExpiredAtGTE(v time.Time) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldGTE(FieldExpiredAt, v))
+}
+
+// ExpiredAtLT applies the LT predicate on the "expired_at" field.
+func ExpiredAtLT(v time.Time) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldLT(FieldExpiredAt, v))
+}
+
+// ExpiredAtLTE applies the LTE predicate on the "expired_at" field.
+func ExpiredAtLTE(v time.Time) predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldLTE(FieldExpiredAt, v))
+}
+
+// ExpiredAtIsNil applies the IsNil predicate on the "expired_at" field.
+func ExpiredAtIsNil() predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldIsNull(FieldExpiredAt))
+}
+
+// ExpiredAtNotNil applies the NotNil predicate on the "expired_at" field.
+func ExpiredAtNotNil() predicate.VirtualMachine {
+	return predicate.VirtualMachine(sql.FieldNotNull(FieldExpiredAt))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

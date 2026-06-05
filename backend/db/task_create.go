@@ -14,8 +14,10 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/chaitin/MonkeyCode/backend/consts"
 	"github.com/chaitin/MonkeyCode/backend/db/gitbottask"
+	"github.com/chaitin/MonkeyCode/backend/db/gittask"
 	"github.com/chaitin/MonkeyCode/backend/db/projecttask"
 	"github.com/chaitin/MonkeyCode/backend/db/task"
+	"github.com/chaitin/MonkeyCode/backend/db/taskmodelswitch"
 	"github.com/chaitin/MonkeyCode/backend/db/taskvirtualmachine"
 	"github.com/chaitin/MonkeyCode/backend/db/user"
 	"github.com/chaitin/MonkeyCode/backend/db/virtualmachine"
@@ -76,6 +78,20 @@ func (_c *TaskCreate) SetContent(v string) *TaskCreate {
 	return _c
 }
 
+// SetTitle sets the "title" field.
+func (_c *TaskCreate) SetTitle(v string) *TaskCreate {
+	_c.mutation.SetTitle(v)
+	return _c
+}
+
+// SetNillableTitle sets the "title" field if the given value is not nil.
+func (_c *TaskCreate) SetNillableTitle(v *string) *TaskCreate {
+	if v != nil {
+		_c.SetTitle(*v)
+	}
+	return _c
+}
+
 // SetSummary sets the "summary" field.
 func (_c *TaskCreate) SetSummary(v string) *TaskCreate {
 	_c.mutation.SetSummary(v)
@@ -96,6 +112,20 @@ func (_c *TaskCreate) SetStatus(v consts.TaskStatus) *TaskCreate {
 	return _c
 }
 
+// SetLogStore sets the "log_store" field.
+func (_c *TaskCreate) SetLogStore(v consts.LogStore) *TaskCreate {
+	_c.mutation.SetLogStore(v)
+	return _c
+}
+
+// SetNillableLogStore sets the "log_store" field if the given value is not nil.
+func (_c *TaskCreate) SetNillableLogStore(v *consts.LogStore) *TaskCreate {
+	if v != nil {
+		_c.SetLogStore(*v)
+	}
+	return _c
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_c *TaskCreate) SetCreatedAt(v time.Time) *TaskCreate {
 	_c.mutation.SetCreatedAt(v)
@@ -106,6 +136,20 @@ func (_c *TaskCreate) SetCreatedAt(v time.Time) *TaskCreate {
 func (_c *TaskCreate) SetNillableCreatedAt(v *time.Time) *TaskCreate {
 	if v != nil {
 		_c.SetCreatedAt(*v)
+	}
+	return _c
+}
+
+// SetLastActiveAt sets the "last_active_at" field.
+func (_c *TaskCreate) SetLastActiveAt(v time.Time) *TaskCreate {
+	_c.mutation.SetLastActiveAt(v)
+	return _c
+}
+
+// SetNillableLastActiveAt sets the "last_active_at" field if the given value is not nil.
+func (_c *TaskCreate) SetNillableLastActiveAt(v *time.Time) *TaskCreate {
+	if v != nil {
+		_c.SetLastActiveAt(*v)
 	}
 	return _c
 }
@@ -159,6 +203,25 @@ func (_c *TaskCreate) AddProjectTasks(v ...*ProjectTask) *TaskCreate {
 	return _c.AddProjectTaskIDs(ids...)
 }
 
+// SetGitTasksID sets the "git_tasks" edge to the GitTask entity by ID.
+func (_c *TaskCreate) SetGitTasksID(id uuid.UUID) *TaskCreate {
+	_c.mutation.SetGitTasksID(id)
+	return _c
+}
+
+// SetNillableGitTasksID sets the "git_tasks" edge to the GitTask entity by ID if the given value is not nil.
+func (_c *TaskCreate) SetNillableGitTasksID(id *uuid.UUID) *TaskCreate {
+	if id != nil {
+		_c = _c.SetGitTasksID(*id)
+	}
+	return _c
+}
+
+// SetGitTasks sets the "git_tasks" edge to the GitTask entity.
+func (_c *TaskCreate) SetGitTasks(v *GitTask) *TaskCreate {
+	return _c.SetGitTasksID(v.ID)
+}
+
 // SetUser sets the "user" edge to the User entity.
 func (_c *TaskCreate) SetUser(v *User) *TaskCreate {
 	return _c.SetUserID(v.ID)
@@ -192,6 +255,21 @@ func (_c *TaskCreate) AddGitBotTasks(v ...*GitBotTask) *TaskCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddGitBotTaskIDs(ids...)
+}
+
+// AddModelSwitchIDs adds the "model_switches" edge to the TaskModelSwitch entity by IDs.
+func (_c *TaskCreate) AddModelSwitchIDs(ids ...uuid.UUID) *TaskCreate {
+	_c.mutation.AddModelSwitchIDs(ids...)
+	return _c
+}
+
+// AddModelSwitches adds the "model_switches" edges to the TaskModelSwitch entity.
+func (_c *TaskCreate) AddModelSwitches(v ...*TaskModelSwitch) *TaskCreate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddModelSwitchIDs(ids...)
 }
 
 // AddTaskVMIDs adds the "task_vms" edge to the TaskVirtualMachine entity by IDs.
@@ -253,6 +331,13 @@ func (_c *TaskCreate) defaults() error {
 		v := task.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
 	}
+	if _, ok := _c.mutation.LastActiveAt(); !ok {
+		if task.DefaultLastActiveAt == nil {
+			return fmt.Errorf("db: uninitialized task.DefaultLastActiveAt (forgotten import db/runtime?)")
+		}
+		v := task.DefaultLastActiveAt()
+		_c.mutation.SetLastActiveAt(v)
+	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		if task.DefaultUpdatedAt == nil {
 			return fmt.Errorf("db: uninitialized task.DefaultUpdatedAt (forgotten import db/runtime?)")
@@ -284,6 +369,9 @@ func (_c *TaskCreate) check() error {
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`db: missing required field "Task.created_at"`)}
+	}
+	if _, ok := _c.mutation.LastActiveAt(); !ok {
+		return &ValidationError{Name: "last_active_at", err: errors.New(`db: missing required field "Task.last_active_at"`)}
 	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`db: missing required field "Task.updated_at"`)}
@@ -343,6 +431,10 @@ func (_c *TaskCreate) createSpec() (*Task, *sqlgraph.CreateSpec) {
 		_spec.SetField(task.FieldContent, field.TypeString, value)
 		_node.Content = value
 	}
+	if value, ok := _c.mutation.Title(); ok {
+		_spec.SetField(task.FieldTitle, field.TypeString, value)
+		_node.Title = value
+	}
 	if value, ok := _c.mutation.Summary(); ok {
 		_spec.SetField(task.FieldSummary, field.TypeString, value)
 		_node.Summary = value
@@ -351,9 +443,17 @@ func (_c *TaskCreate) createSpec() (*Task, *sqlgraph.CreateSpec) {
 		_spec.SetField(task.FieldStatus, field.TypeString, value)
 		_node.Status = value
 	}
+	if value, ok := _c.mutation.LogStore(); ok {
+		_spec.SetField(task.FieldLogStore, field.TypeString, value)
+		_node.LogStore = &value
+	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(task.FieldCreatedAt, field.TypeTime, value)
 		_node.CreatedAt = value
+	}
+	if value, ok := _c.mutation.LastActiveAt(); ok {
+		_spec.SetField(task.FieldLastActiveAt, field.TypeTime, value)
+		_node.LastActiveAt = value
 	}
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(task.FieldUpdatedAt, field.TypeTime, value)
@@ -372,6 +472,22 @@ func (_c *TaskCreate) createSpec() (*Task, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(projecttask.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.GitTasksIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   task.GitTasksTable,
+			Columns: []string{task.GitTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(gittask.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {
@@ -425,6 +541,22 @@ func (_c *TaskCreate) createSpec() (*Task, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(gitbottask.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ModelSwitchesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.ModelSwitchesTable,
+			Columns: []string{task.ModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {
@@ -572,6 +704,24 @@ func (u *TaskUpsert) UpdateContent() *TaskUpsert {
 	return u
 }
 
+// SetTitle sets the "title" field.
+func (u *TaskUpsert) SetTitle(v string) *TaskUpsert {
+	u.Set(task.FieldTitle, v)
+	return u
+}
+
+// UpdateTitle sets the "title" field to the value that was provided on create.
+func (u *TaskUpsert) UpdateTitle() *TaskUpsert {
+	u.SetExcluded(task.FieldTitle)
+	return u
+}
+
+// ClearTitle clears the value of the "title" field.
+func (u *TaskUpsert) ClearTitle() *TaskUpsert {
+	u.SetNull(task.FieldTitle)
+	return u
+}
+
 // SetSummary sets the "summary" field.
 func (u *TaskUpsert) SetSummary(v string) *TaskUpsert {
 	u.Set(task.FieldSummary, v)
@@ -602,6 +752,24 @@ func (u *TaskUpsert) UpdateStatus() *TaskUpsert {
 	return u
 }
 
+// SetLogStore sets the "log_store" field.
+func (u *TaskUpsert) SetLogStore(v consts.LogStore) *TaskUpsert {
+	u.Set(task.FieldLogStore, v)
+	return u
+}
+
+// UpdateLogStore sets the "log_store" field to the value that was provided on create.
+func (u *TaskUpsert) UpdateLogStore() *TaskUpsert {
+	u.SetExcluded(task.FieldLogStore)
+	return u
+}
+
+// ClearLogStore clears the value of the "log_store" field.
+func (u *TaskUpsert) ClearLogStore() *TaskUpsert {
+	u.SetNull(task.FieldLogStore)
+	return u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (u *TaskUpsert) SetCreatedAt(v time.Time) *TaskUpsert {
 	u.Set(task.FieldCreatedAt, v)
@@ -611,6 +779,18 @@ func (u *TaskUpsert) SetCreatedAt(v time.Time) *TaskUpsert {
 // UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
 func (u *TaskUpsert) UpdateCreatedAt() *TaskUpsert {
 	u.SetExcluded(task.FieldCreatedAt)
+	return u
+}
+
+// SetLastActiveAt sets the "last_active_at" field.
+func (u *TaskUpsert) SetLastActiveAt(v time.Time) *TaskUpsert {
+	u.Set(task.FieldLastActiveAt, v)
+	return u
+}
+
+// UpdateLastActiveAt sets the "last_active_at" field to the value that was provided on create.
+func (u *TaskUpsert) UpdateLastActiveAt() *TaskUpsert {
+	u.SetExcluded(task.FieldLastActiveAt)
 	return u
 }
 
@@ -776,6 +956,27 @@ func (u *TaskUpsertOne) UpdateContent() *TaskUpsertOne {
 	})
 }
 
+// SetTitle sets the "title" field.
+func (u *TaskUpsertOne) SetTitle(v string) *TaskUpsertOne {
+	return u.Update(func(s *TaskUpsert) {
+		s.SetTitle(v)
+	})
+}
+
+// UpdateTitle sets the "title" field to the value that was provided on create.
+func (u *TaskUpsertOne) UpdateTitle() *TaskUpsertOne {
+	return u.Update(func(s *TaskUpsert) {
+		s.UpdateTitle()
+	})
+}
+
+// ClearTitle clears the value of the "title" field.
+func (u *TaskUpsertOne) ClearTitle() *TaskUpsertOne {
+	return u.Update(func(s *TaskUpsert) {
+		s.ClearTitle()
+	})
+}
+
 // SetSummary sets the "summary" field.
 func (u *TaskUpsertOne) SetSummary(v string) *TaskUpsertOne {
 	return u.Update(func(s *TaskUpsert) {
@@ -811,6 +1012,27 @@ func (u *TaskUpsertOne) UpdateStatus() *TaskUpsertOne {
 	})
 }
 
+// SetLogStore sets the "log_store" field.
+func (u *TaskUpsertOne) SetLogStore(v consts.LogStore) *TaskUpsertOne {
+	return u.Update(func(s *TaskUpsert) {
+		s.SetLogStore(v)
+	})
+}
+
+// UpdateLogStore sets the "log_store" field to the value that was provided on create.
+func (u *TaskUpsertOne) UpdateLogStore() *TaskUpsertOne {
+	return u.Update(func(s *TaskUpsert) {
+		s.UpdateLogStore()
+	})
+}
+
+// ClearLogStore clears the value of the "log_store" field.
+func (u *TaskUpsertOne) ClearLogStore() *TaskUpsertOne {
+	return u.Update(func(s *TaskUpsert) {
+		s.ClearLogStore()
+	})
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (u *TaskUpsertOne) SetCreatedAt(v time.Time) *TaskUpsertOne {
 	return u.Update(func(s *TaskUpsert) {
@@ -822,6 +1044,20 @@ func (u *TaskUpsertOne) SetCreatedAt(v time.Time) *TaskUpsertOne {
 func (u *TaskUpsertOne) UpdateCreatedAt() *TaskUpsertOne {
 	return u.Update(func(s *TaskUpsert) {
 		s.UpdateCreatedAt()
+	})
+}
+
+// SetLastActiveAt sets the "last_active_at" field.
+func (u *TaskUpsertOne) SetLastActiveAt(v time.Time) *TaskUpsertOne {
+	return u.Update(func(s *TaskUpsert) {
+		s.SetLastActiveAt(v)
+	})
+}
+
+// UpdateLastActiveAt sets the "last_active_at" field to the value that was provided on create.
+func (u *TaskUpsertOne) UpdateLastActiveAt() *TaskUpsertOne {
+	return u.Update(func(s *TaskUpsert) {
+		s.UpdateLastActiveAt()
 	})
 }
 
@@ -1159,6 +1395,27 @@ func (u *TaskUpsertBulk) UpdateContent() *TaskUpsertBulk {
 	})
 }
 
+// SetTitle sets the "title" field.
+func (u *TaskUpsertBulk) SetTitle(v string) *TaskUpsertBulk {
+	return u.Update(func(s *TaskUpsert) {
+		s.SetTitle(v)
+	})
+}
+
+// UpdateTitle sets the "title" field to the value that was provided on create.
+func (u *TaskUpsertBulk) UpdateTitle() *TaskUpsertBulk {
+	return u.Update(func(s *TaskUpsert) {
+		s.UpdateTitle()
+	})
+}
+
+// ClearTitle clears the value of the "title" field.
+func (u *TaskUpsertBulk) ClearTitle() *TaskUpsertBulk {
+	return u.Update(func(s *TaskUpsert) {
+		s.ClearTitle()
+	})
+}
+
 // SetSummary sets the "summary" field.
 func (u *TaskUpsertBulk) SetSummary(v string) *TaskUpsertBulk {
 	return u.Update(func(s *TaskUpsert) {
@@ -1194,6 +1451,27 @@ func (u *TaskUpsertBulk) UpdateStatus() *TaskUpsertBulk {
 	})
 }
 
+// SetLogStore sets the "log_store" field.
+func (u *TaskUpsertBulk) SetLogStore(v consts.LogStore) *TaskUpsertBulk {
+	return u.Update(func(s *TaskUpsert) {
+		s.SetLogStore(v)
+	})
+}
+
+// UpdateLogStore sets the "log_store" field to the value that was provided on create.
+func (u *TaskUpsertBulk) UpdateLogStore() *TaskUpsertBulk {
+	return u.Update(func(s *TaskUpsert) {
+		s.UpdateLogStore()
+	})
+}
+
+// ClearLogStore clears the value of the "log_store" field.
+func (u *TaskUpsertBulk) ClearLogStore() *TaskUpsertBulk {
+	return u.Update(func(s *TaskUpsert) {
+		s.ClearLogStore()
+	})
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (u *TaskUpsertBulk) SetCreatedAt(v time.Time) *TaskUpsertBulk {
 	return u.Update(func(s *TaskUpsert) {
@@ -1205,6 +1483,20 @@ func (u *TaskUpsertBulk) SetCreatedAt(v time.Time) *TaskUpsertBulk {
 func (u *TaskUpsertBulk) UpdateCreatedAt() *TaskUpsertBulk {
 	return u.Update(func(s *TaskUpsert) {
 		s.UpdateCreatedAt()
+	})
+}
+
+// SetLastActiveAt sets the "last_active_at" field.
+func (u *TaskUpsertBulk) SetLastActiveAt(v time.Time) *TaskUpsertBulk {
+	return u.Update(func(s *TaskUpsert) {
+		s.SetLastActiveAt(v)
+	})
+}
+
+// UpdateLastActiveAt sets the "last_active_at" field to the value that was provided on create.
+func (u *TaskUpsertBulk) UpdateLastActiveAt() *TaskUpsertBulk {
+	return u.Update(func(s *TaskUpsert) {
+		s.UpdateLastActiveAt()
 	})
 }
 

@@ -84,6 +84,11 @@ func Content(v string) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldContent, v))
 }
 
+// Title applies equality check predicate on the "title" field. It's identical to TitleEQ.
+func Title(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldTitle, v))
+}
+
 // Summary applies equality check predicate on the "summary" field. It's identical to SummaryEQ.
 func Summary(v string) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldSummary, v))
@@ -95,9 +100,20 @@ func Status(v consts.TaskStatus) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldStatus, vc))
 }
 
+// LogStore applies equality check predicate on the "log_store" field. It's identical to LogStoreEQ.
+func LogStore(v consts.LogStore) predicate.Task {
+	vc := string(v)
+	return predicate.Task(sql.FieldEQ(FieldLogStore, vc))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldCreatedAt, v))
+}
+
+// LastActiveAt applies equality check predicate on the "last_active_at" field. It's identical to LastActiveAtEQ.
+func LastActiveAt(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldLastActiveAt, v))
 }
 
 // UpdatedAt applies equality check predicate on the "updated_at" field. It's identical to UpdatedAtEQ.
@@ -423,6 +439,81 @@ func ContentContainsFold(v string) predicate.Task {
 	return predicate.Task(sql.FieldContainsFold(FieldContent, v))
 }
 
+// TitleEQ applies the EQ predicate on the "title" field.
+func TitleEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldTitle, v))
+}
+
+// TitleNEQ applies the NEQ predicate on the "title" field.
+func TitleNEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldTitle, v))
+}
+
+// TitleIn applies the In predicate on the "title" field.
+func TitleIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldTitle, vs...))
+}
+
+// TitleNotIn applies the NotIn predicate on the "title" field.
+func TitleNotIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldTitle, vs...))
+}
+
+// TitleGT applies the GT predicate on the "title" field.
+func TitleGT(v string) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldTitle, v))
+}
+
+// TitleGTE applies the GTE predicate on the "title" field.
+func TitleGTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldTitle, v))
+}
+
+// TitleLT applies the LT predicate on the "title" field.
+func TitleLT(v string) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldTitle, v))
+}
+
+// TitleLTE applies the LTE predicate on the "title" field.
+func TitleLTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldTitle, v))
+}
+
+// TitleContains applies the Contains predicate on the "title" field.
+func TitleContains(v string) predicate.Task {
+	return predicate.Task(sql.FieldContains(FieldTitle, v))
+}
+
+// TitleHasPrefix applies the HasPrefix predicate on the "title" field.
+func TitleHasPrefix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasPrefix(FieldTitle, v))
+}
+
+// TitleHasSuffix applies the HasSuffix predicate on the "title" field.
+func TitleHasSuffix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasSuffix(FieldTitle, v))
+}
+
+// TitleIsNil applies the IsNil predicate on the "title" field.
+func TitleIsNil() predicate.Task {
+	return predicate.Task(sql.FieldIsNull(FieldTitle))
+}
+
+// TitleNotNil applies the NotNil predicate on the "title" field.
+func TitleNotNil() predicate.Task {
+	return predicate.Task(sql.FieldNotNull(FieldTitle))
+}
+
+// TitleEqualFold applies the EqualFold predicate on the "title" field.
+func TitleEqualFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldEqualFold(FieldTitle, v))
+}
+
+// TitleContainsFold applies the ContainsFold predicate on the "title" field.
+func TitleContainsFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldContainsFold(FieldTitle, v))
+}
+
 // SummaryEQ applies the EQ predicate on the "summary" field.
 func SummaryEQ(v string) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldSummary, v))
@@ -582,6 +673,100 @@ func StatusContainsFold(v consts.TaskStatus) predicate.Task {
 	return predicate.Task(sql.FieldContainsFold(FieldStatus, vc))
 }
 
+// LogStoreEQ applies the EQ predicate on the "log_store" field.
+func LogStoreEQ(v consts.LogStore) predicate.Task {
+	vc := string(v)
+	return predicate.Task(sql.FieldEQ(FieldLogStore, vc))
+}
+
+// LogStoreNEQ applies the NEQ predicate on the "log_store" field.
+func LogStoreNEQ(v consts.LogStore) predicate.Task {
+	vc := string(v)
+	return predicate.Task(sql.FieldNEQ(FieldLogStore, vc))
+}
+
+// LogStoreIn applies the In predicate on the "log_store" field.
+func LogStoreIn(vs ...consts.LogStore) predicate.Task {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.Task(sql.FieldIn(FieldLogStore, v...))
+}
+
+// LogStoreNotIn applies the NotIn predicate on the "log_store" field.
+func LogStoreNotIn(vs ...consts.LogStore) predicate.Task {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.Task(sql.FieldNotIn(FieldLogStore, v...))
+}
+
+// LogStoreGT applies the GT predicate on the "log_store" field.
+func LogStoreGT(v consts.LogStore) predicate.Task {
+	vc := string(v)
+	return predicate.Task(sql.FieldGT(FieldLogStore, vc))
+}
+
+// LogStoreGTE applies the GTE predicate on the "log_store" field.
+func LogStoreGTE(v consts.LogStore) predicate.Task {
+	vc := string(v)
+	return predicate.Task(sql.FieldGTE(FieldLogStore, vc))
+}
+
+// LogStoreLT applies the LT predicate on the "log_store" field.
+func LogStoreLT(v consts.LogStore) predicate.Task {
+	vc := string(v)
+	return predicate.Task(sql.FieldLT(FieldLogStore, vc))
+}
+
+// LogStoreLTE applies the LTE predicate on the "log_store" field.
+func LogStoreLTE(v consts.LogStore) predicate.Task {
+	vc := string(v)
+	return predicate.Task(sql.FieldLTE(FieldLogStore, vc))
+}
+
+// LogStoreContains applies the Contains predicate on the "log_store" field.
+func LogStoreContains(v consts.LogStore) predicate.Task {
+	vc := string(v)
+	return predicate.Task(sql.FieldContains(FieldLogStore, vc))
+}
+
+// LogStoreHasPrefix applies the HasPrefix predicate on the "log_store" field.
+func LogStoreHasPrefix(v consts.LogStore) predicate.Task {
+	vc := string(v)
+	return predicate.Task(sql.FieldHasPrefix(FieldLogStore, vc))
+}
+
+// LogStoreHasSuffix applies the HasSuffix predicate on the "log_store" field.
+func LogStoreHasSuffix(v consts.LogStore) predicate.Task {
+	vc := string(v)
+	return predicate.Task(sql.FieldHasSuffix(FieldLogStore, vc))
+}
+
+// LogStoreIsNil applies the IsNil predicate on the "log_store" field.
+func LogStoreIsNil() predicate.Task {
+	return predicate.Task(sql.FieldIsNull(FieldLogStore))
+}
+
+// LogStoreNotNil applies the NotNil predicate on the "log_store" field.
+func LogStoreNotNil() predicate.Task {
+	return predicate.Task(sql.FieldNotNull(FieldLogStore))
+}
+
+// LogStoreEqualFold applies the EqualFold predicate on the "log_store" field.
+func LogStoreEqualFold(v consts.LogStore) predicate.Task {
+	vc := string(v)
+	return predicate.Task(sql.FieldEqualFold(FieldLogStore, vc))
+}
+
+// LogStoreContainsFold applies the ContainsFold predicate on the "log_store" field.
+func LogStoreContainsFold(v consts.LogStore) predicate.Task {
+	vc := string(v)
+	return predicate.Task(sql.FieldContainsFold(FieldLogStore, vc))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldCreatedAt, v))
@@ -620,6 +805,46 @@ func CreatedAtLT(v time.Time) predicate.Task {
 // CreatedAtLTE applies the LTE predicate on the "created_at" field.
 func CreatedAtLTE(v time.Time) predicate.Task {
 	return predicate.Task(sql.FieldLTE(FieldCreatedAt, v))
+}
+
+// LastActiveAtEQ applies the EQ predicate on the "last_active_at" field.
+func LastActiveAtEQ(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldLastActiveAt, v))
+}
+
+// LastActiveAtNEQ applies the NEQ predicate on the "last_active_at" field.
+func LastActiveAtNEQ(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldLastActiveAt, v))
+}
+
+// LastActiveAtIn applies the In predicate on the "last_active_at" field.
+func LastActiveAtIn(vs ...time.Time) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldLastActiveAt, vs...))
+}
+
+// LastActiveAtNotIn applies the NotIn predicate on the "last_active_at" field.
+func LastActiveAtNotIn(vs ...time.Time) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldLastActiveAt, vs...))
+}
+
+// LastActiveAtGT applies the GT predicate on the "last_active_at" field.
+func LastActiveAtGT(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldLastActiveAt, v))
+}
+
+// LastActiveAtGTE applies the GTE predicate on the "last_active_at" field.
+func LastActiveAtGTE(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldLastActiveAt, v))
+}
+
+// LastActiveAtLT applies the LT predicate on the "last_active_at" field.
+func LastActiveAtLT(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldLastActiveAt, v))
+}
+
+// LastActiveAtLTE applies the LTE predicate on the "last_active_at" field.
+func LastActiveAtLTE(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldLastActiveAt, v))
 }
 
 // UpdatedAtEQ applies the EQ predicate on the "updated_at" field.
@@ -735,6 +960,29 @@ func HasProjectTasksWith(preds ...predicate.ProjectTask) predicate.Task {
 	})
 }
 
+// HasGitTasks applies the HasEdge predicate on the "git_tasks" edge.
+func HasGitTasks() predicate.Task {
+	return predicate.Task(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, GitTasksTable, GitTasksColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasGitTasksWith applies the HasEdge predicate on the "git_tasks" edge with a given conditions (other predicates).
+func HasGitTasksWith(preds ...predicate.GitTask) predicate.Task {
+	return predicate.Task(func(s *sql.Selector) {
+		step := newGitTasksStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasUser applies the HasEdge predicate on the "user" edge.
 func HasUser() predicate.Task {
 	return predicate.Task(func(s *sql.Selector) {
@@ -796,6 +1044,29 @@ func HasGitBotTasks() predicate.Task {
 func HasGitBotTasksWith(preds ...predicate.GitBotTask) predicate.Task {
 	return predicate.Task(func(s *sql.Selector) {
 		step := newGitBotTasksStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasModelSwitches applies the HasEdge predicate on the "model_switches" edge.
+func HasModelSwitches() predicate.Task {
+	return predicate.Task(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ModelSwitchesTable, ModelSwitchesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasModelSwitchesWith applies the HasEdge predicate on the "model_switches" edge with a given conditions (other predicates).
+func HasModelSwitchesWith(preds ...predicate.TaskModelSwitch) predicate.Task {
+	return predicate.Task(func(s *sql.Selector) {
+		step := newModelSwitchesStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

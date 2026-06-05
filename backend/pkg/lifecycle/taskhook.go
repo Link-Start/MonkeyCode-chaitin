@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -51,6 +52,8 @@ func (h *TaskHook) OnStateChange(ctx context.Context, id uuid.UUID, from, to con
 		return h.handleProcessing(ctx, id, metadata)
 	case consts.TaskStatusError:
 		return h.handleError(ctx, id, metadata.UserID)
+	case consts.TaskStatusFinished:
+		return h.handleFinished(ctx, id, metadata.UserID)
 	}
 
 	return nil
@@ -58,6 +61,7 @@ func (h *TaskHook) OnStateChange(ctx context.Context, id uuid.UUID, from, to con
 
 func (h *TaskHook) withError(ctx context.Context, id, uid uuid.UUID, fn func() error) {
 	if err := fn(); err != nil {
+		h.logger.With("error", err, "task_id", id).ErrorContext(ctx, "failed to handle processing")
 		if err := h.taskLifecycle.Transition(ctx, id, consts.TaskStatusError, TaskMetadata{
 			TaskID: id,
 			UserID: uid,
@@ -76,8 +80,27 @@ func (h *TaskHook) handleError(ctx context.Context, id, uid uuid.UUID) error {
 	})
 }
 
+func (h *TaskHook) handleFinished(ctx context.Context, id, uid uuid.UUID) error {
+	u := domain.User{ID: uid}
+	return h.repo.Update(ctx, &u, id, func(up *db.TaskUpdateOne) error {
+		up.SetStatus(consts.TaskStatusFinished)
+		up.SetCompletedAt(time.Now())
+		return nil
+	})
+}
+
 func (h *TaskHook) handleProcessing(ctx context.Context, id uuid.UUID, metadata TaskMetadata) error {
 	h.withError(ctx, id, metadata.UserID, func() error {
+		// 从 DB 查询当前任务状态，如果已经是 processing 说明是 Agent 重连触发的重复 vm-ready，跳过
+		t, err := h.repo.GetByID(ctx, id)
+		if err != nil {
+			return fmt.Errorf("failed to get task: %w", err)
+		}
+		if t.Status == consts.TaskStatusProcessing {
+			h.logger.With("task_id", id).InfoContext(ctx, "task already processing, skipping (likely agent reconnect)")
+			return nil
+		}
+
 		reqKey := fmt.Sprintf("task:create_req:%s", id.String())
 		val, err := h.redis.Get(ctx, reqKey).Result()
 		if err != nil {
@@ -99,9 +122,15 @@ func (h *TaskHook) handleProcessing(ctx context.Context, id uuid.UUID, metadata 
 			h.logger.With("task_id", id, "error", err).ErrorContext(ctx, "failed to unmarshal CreateTaskReq")
 			return fmt.Errorf("failed to unmarshal CreateTaskReq: %w", err)
 		}
+		if t.LogStore != nil {
+			createReq.LogStore = string(*t.LogStore)
+		}
 
 		h.logger.With("task_id", id).InfoContext(ctx, "creating taskflow task")
-		return h.taskflow.TaskManager().Create(ctx, createReq)
+		if err := h.taskflow.TaskManager().Create(ctx, createReq); err != nil {
+			h.logger.With("error", err, "task_id", id).ErrorContext(ctx, "failed to create task")
+		}
+		return nil
 	})
 
 	return nil

@@ -1,24 +1,21 @@
-import { Api, ConstsCliName, ConstsGitPlatform, ConstsHostStatus, ConstsOwnerType, ConstsTaskSubType, ConstsTaskType, ConstsUserRole, type DomainAuthRepository, type DomainGitIdentity, type DomainSkill } from "@/api/Api";
+import { ConstsCliName, ConstsGitPlatform, ConstsHostStatus, ConstsOwnerType, ConstsTaskType, ConstsUserRole, type DomainAuthRepository, type DomainGitIdentity, type DomainSkill } from "@/api/Api";
 import Icon from "@/components/common/Icon";
 import { useCommonData } from "@/components/console/data-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Command, CommandGroup, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldContent, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupTextarea } from "@/components/ui/input-group";
 import { InputGroupAddon } from "@/components/ui/input-group";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { canUseModelBySubscription, getBrandFromModelName, getGitPlatformIcon, getHostBadges, getImageShortName, getModelHealthBadge, getOSFromImageName, getOwnerTypeBadge, getPublicModelMetaBadges, getRepoIcon, getRepoNameFromUrl, getSkillTagIcon, selectHost, selectImage, selectPreferredTaskModel } from "@/utils/common";
+import { TASK_PROMPT_PLACEHOLDER, getGitPlatformIcon, getHostBadges, getImageShortName, getOSFromImageName, getOwnerTypeBadge, getRepoIcon, getRepoNameFromUrl, selectHost, selectImage, selectPreferredTaskModel, uploadFileWithPresignedUrl } from "@/utils/common";
 import { apiRequest } from "@/utils/requestUtils";
-import { IconBug, IconLink, IconPuzzle, IconSend, IconSourceCode, IconTerminal2, IconUpload, IconUser, IconVocabulary, IconXboxX } from "@tabler/icons-react";
+import { IconLink, IconReload, IconSend, IconSourceCode, IconUpload, IconUser, IconXboxX } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSettingsDialog } from "@/pages/console/user/page";
@@ -27,41 +24,13 @@ import { toast } from "sonner";
 import { VoiceInputButton } from "./voice-input-button";
 import { TaskConcurrentLimitDialog } from "./task-concurrent-limit-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
 import { defaultSkills } from "@/utils/config";
+import { IS_OFFLINE_EDITION } from "@/utils/edition";
 import { readStoredTaskDialogParams, writeStoredTaskDialogParams } from "./task-dialog-params-storage";
-
-
-interface SkillItemProps {
-  skill: DomainSkill;
-  selectedSkills: string[];
-  onSkillChange: (skillName: string, checked: boolean) => void;
-}
-
-function SkillItem({ skill, selectedSkills, onSkillChange }: SkillItemProps) {
-  if (!skill.id) {
-    return null;
-  }
-
-  const isChecked = selectedSkills.includes(skill.id);
-
-  return (
-    <div 
-      className="cursor-pointer hover:bg-accent rounded-md px-2 py-1 items-center flex flex-row gap-2" 
-      onClick={() => { onSkillChange(skill.id!, !isChecked)}}>
-      <Checkbox checked={isChecked} disabled={defaultSkills.includes(skill.id!)} />
-      <div>
-        <div className="text-sm cursor-pointer">
-          {skill.name}
-        </div>
-        <div className="text-xs text-muted-foreground break-all line-clamp-1">
-          {skill.description}
-        </div>
-      </div>
-    </div>
-  );
-}
+import ModelSelect from "./model-select";
+import { TaskSkillSelector } from "./task-skill-selector";
+import { getTaskContentLimitErrorMessage, MAX_TASK_CONTENT_LENGTH } from "./task-content-limit";
 
 interface RepoOption {
   gitIdentityId: string;
@@ -69,12 +38,10 @@ interface RepoOption {
   repository: DomainAuthRepository;
 }
 
-/** 支持从仓库列表选择的身份（GitHub App、Gitee、Gitea、GitLab OAuth） */
+/** 支持从仓库列表选择的身份（GitHub、Gitee、Gitea、GitLab） */
 function isIdentityWithRepos(identity: DomainGitIdentity): boolean {
-  if (identity.platform === ConstsGitPlatform.GitPlatformGithub) {
-    return identity.is_installation_app === true;
-  }
   return [
+    ConstsGitPlatform.GitPlatformGithub,
     ConstsGitPlatform.GitPlatformGitee,
     ConstsGitPlatform.GitPlatformGitea,
     ConstsGitPlatform.GitPlatformGitLab,
@@ -90,8 +57,7 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
   const navigate = useNavigate()
   // 输入相关状态
   const [taskContent, setTaskContent] = useState<string>("");
-  const [taskType, setTaskType] = useState<ConstsTaskType>(ConstsTaskType.TaskTypeDevelop);
-  const [taskTypePopoverOpen, setTaskTypePopoverOpen] = useState<boolean>(false);
+  const taskType = ConstsTaskType.TaskTypeDevelop;
   const [skillPopoverOpen, setSkillPopoverOpen] = useState<boolean>(false);
   const [searchInput, setSearchInput] = useState<string>("");
   const [selectedRepo, setSelectedRepo] = useState<string>("");
@@ -103,6 +69,7 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
   const [codeDropdownOpen, setCodeDropdownOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<string[]>(defaultSkills);
   const [skillList, setSkillList] = useState<DomainSkill[]>([]);
+  const [activeSkillTag, setActiveSkillTag] = useState<string>("全部");
 
   // 运行参数状态（工具固定为 opencode）
   const [selectedModelId, setSelectedModelId] = useState<string>("");
@@ -130,7 +97,6 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
     [identities]
   );
 
-
   // 根据选中的仓库自动匹配身份凭证；若用户已显式选择（如从「我的仓库」选中、或选择「匿名」），且该身份仍在匹配列表中，则保留用户选择
   useEffect(() => {
     const matchedIdentities = identities.filter((identity) => {
@@ -148,6 +114,10 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
 
 
   const fetchSkillList = () => {
+    if (IS_OFFLINE_EDITION) {
+      return;
+    }
+
     apiRequest('v1SkillsList', {}, [], (resp) => {
       if (resp.code === 0) {
         setSkillList(resp.data || []);
@@ -157,26 +127,38 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
     });
   };
 
-  const loadReposForAllIdentities = async () => {
+  const loadReposForAllIdentities = async (flush = false, targetIdentityId?: string) => {
+    const targetIdentities = selectableIdentities.filter((identity) => {
+      if (!identity.id) return false;
+      return targetIdentityId ? identity.id === targetIdentityId : true;
+    });
+
+    if (targetIdentities.length === 0) {
+      return;
+    }
+
     setLoadingByIdentity((prev) => {
       const next = { ...prev };
-      selectableIdentities.forEach((i) => {
-        if (i.id) next[i.id] = true;
+      targetIdentities.forEach((identity) => {
+        if (identity.id) next[identity.id] = true;
       });
       return next;
     });
-    setReposByIdentity({});
+
+    if (!targetIdentityId) {
+      setReposByIdentity({});
+    }
 
     const newRepos: Record<string, RepoOption[]> = {};
     const newLoading: Record<string, boolean> = {};
 
-    for (const identity of selectableIdentities) {
+    for (const identity of targetIdentities) {
       const id = identity.id;
       if (!id) continue;
       await new Promise<void>((resolve) => {
         apiRequest(
           "v1UsersGitIdentitiesDetail",
-          {},
+          flush ? { flush: true } : {},
           [id],
           (detailResp) => {
             if (detailResp.code !== 0) {
@@ -212,24 +194,14 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
 
   const setDefaultConfig = () => {
     const storedParams = readStoredTaskDialogParams();
-    const defaultModelId = selectPreferredTaskModel(models, subscription);
-    const nextModelId = (
-      storedParams.modelId
-      && models.some((model) => model.id === storedParams.modelId)
-      && canUseModelBySubscription(models.find((model) => model.id === storedParams.modelId), subscription)
-    )
-      ? storedParams.modelId
-      : defaultModelId;
-
-    setSelectedModelId(nextModelId);
+    setSelectedModelId(selectPreferredTaskModel(models, subscription));
 
     if (user.role === ConstsUserRole.UserRoleSubAccount) {
-      const nextHostId = (
-        storedParams.hostId === "public_host"
-        || hosts.some((host) => host.id === storedParams.hostId && host.status === ConstsHostStatus.HostStatusOnline)
-      )
+      const nextHostId = hosts.some((host) => host.id === storedParams.hostId && host.status === ConstsHostStatus.HostStatusOnline)
         ? (storedParams.hostId || "public_host")
-        : selectHost(hosts, true);
+        : IS_OFFLINE_EDITION
+          ? (hosts.find((host) => host.id && host.status === ConstsHostStatus.HostStatusOnline)?.id || "")
+          : selectHost(hosts, true);
       const nextImageId = (
         storedParams.imageId
         && images.some((image) => image.id === storedParams.imageId)
@@ -246,35 +218,37 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
     setSelectedImageId(selectImage(images, false));
   };
 
-  const adaptedModelForTool = (): boolean => {
-    // 固定使用 opencode，支持所有模型
-    return true;
-  };
-
   const selectedModel = useMemo(
     () => models.find((model) => model.id === selectedModelId),
     [models, selectedModelId]
   );
-  const selectedProModelDisabled = selectedModel?.access_level === "pro" && subscription?.plan !== "pro"
 
   const selectedPublicModel = selectedModel?.owner?.type === ConstsOwnerType.OwnerTypePublic;
+  const taskContentLength = taskContent.length;
+  const taskContentTooLong = taskContentLength > MAX_TASK_CONTENT_LENGTH;
 
-  useEffect(() => {
-    if (!selectedProModelDisabled) {
-      return
+  const validateTaskContent = () => {
+    if (!taskContent.trim()) {
+      toast.error('请输入任务内容');
+      return false;
     }
-    setSelectedModelId(selectPreferredTaskModel(models, subscription))
-  }, [models, selectedProModelDisabled, subscription])
+
+    if (taskContentTooLong) {
+      toast.error(getTaskContentLimitErrorMessage());
+      return false;
+    }
+
+    return true;
+  };
 
   useEffect(() => {
-    if (selectedPublicModel && selectedHostId && selectedHostId !== "public_host") {
+    if (!IS_OFFLINE_EDITION && selectedPublicModel && selectedHostId && selectedHostId !== "public_host") {
       setSelectedHostId("public_host");
     }
   }, [selectedPublicModel, selectedHostId]);
 
   const readyToExecuteTask = () => {
-    if (!taskContent.trim()) {
-      toast.error('请输入任务内容');
+    if (!validateTaskContent()) {
       return;
     }
 
@@ -284,14 +258,13 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
     }
 
     // 检查公共模型与非公共宿主机的组合
-    if (selectedModel?.owner?.type === ConstsOwnerType.OwnerTypePublic && selectedHostId !== "public_host") {
+    if (!IS_OFFLINE_EDITION && selectedModel?.owner?.type === ConstsOwnerType.OwnerTypePublic && selectedHostId !== "public_host") {
       toast.warning('内置模型只能在内置宿主机上使用');
       return;
     }
 
     const storedParams = readStoredTaskDialogParams();
     writeStoredTaskDialogParams({
-      modelId: selectedModelId,
       hostId: user.role === ConstsUserRole.UserRoleSubAccount ? selectedHostId : storedParams.hostId,
       imageId: user.role === ConstsUserRole.UserRoleSubAccount ? selectedImageId : storedParams.imageId,
     });
@@ -300,6 +273,10 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
   };
 
   const executeTask = async () => {
+    if (!validateTaskContent()) {
+      return;
+    }
+
     setCreatingTask(true);
     await apiRequest('v1UsersTasksCreate', {
       cli_name: ConstsCliName.CliNameOpencode,
@@ -309,7 +286,6 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
       image_id: selectedImageId,
       model_id: selectedModelId,
       task_type: taskType,
-      sub_type: taskType === ConstsTaskType.TaskTypeDesign ? ConstsTaskSubType.TaskSubTypeGenerateRequirement : undefined,
       repo: selectedRepoDisplayName.endsWith('.zip') ? {
         zip_url: selectedRepo,
         repo_filename: selectedRepoDisplayName,
@@ -369,39 +345,9 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
 
     setUploadingZip(true);
     try {
-      const api = new Api();
-      const presignResponse = await api.api.v1UploaderPresignCreate({
-        filename: selectedZipFile.name,
-        usage: "repo",
-        expires: 600,
-      });
+      const uploadedFile = await uploadFileWithPresignedUrl(selectedZipFile);
 
-      if (presignResponse.data?.code !== 0 || !presignResponse.data?.data) {
-        toast.error('获取上传地址失败: ' + (presignResponse.data?.message || '未知错误'));
-        return;
-      }
-
-      const { upload_url, access_url } = presignResponse.data.data;
-
-      if (!upload_url || !access_url) {
-        toast.error('获取上传地址失败: 返回数据不完整');
-        return;
-      }
-
-      const uploadResponse = await fetch(upload_url, {
-        method: 'PUT',
-        body: selectedZipFile,
-        headers: {
-          'Content-Type': 'application/zip',
-        },
-      });
-
-      if (!uploadResponse.ok) {
-        toast.error('文件上传失败: ' + uploadResponse.statusText);
-        return;
-      }
-
-      setSelectedRepo(access_url);
+      setSelectedRepo(uploadedFile.accessUrl);
       setSelectedRepoDisplayName(selectedZipFile.name);
       setSelectedRepoFromMyRepos(false);
       setUploadDialogOpen(false);
@@ -415,8 +361,7 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
   };
 
   const handleExecuteButtonClick = () => {
-    if (!taskContent.trim()) {
-      toast.error('请输入任务内容');
+    if (!validateTaskContent()) {
       return;
     }
 
@@ -443,6 +388,12 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
     return ["全部"].concat(sortedTags);
   }, [skillList]);
 
+  useEffect(() => {
+    if (!skillTags.includes(activeSkillTag)) {
+      setActiveSkillTag(skillTags[0] || "全部");
+    }
+  }, [activeSkillTag, skillTags]);
+
   const handleSkillChange = (skillId: string, checked: boolean) => {
 
     if (defaultSkills.includes(skillId)) {
@@ -463,71 +414,13 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
       <InputGroup className="rounded-4xl p-2 pb-0">
         <InputGroupTextarea 
           className="min-h-30 max-h-60 break-all" 
-          placeholder="请输入任务内容" 
+          aria-invalid={taskContentTooLong}
+          placeholder={TASK_PROMPT_PLACEHOLDER} 
           value={taskContent} 
           onChange={(e) => setTaskContent(e.target.value)} 
         />
         <InputGroupAddon align="block-end" className="flex flex-row w-full justify-between">
           <div className="flex flex-row gap-2">
-            <Popover open={taskTypePopoverOpen} onOpenChange={setTaskTypePopoverOpen}>
-              <PopoverTrigger asChild>
-                <Button size="sm" variant="outline" className="rounded-full text-primary hover:text-primary">
-                  {taskType === ConstsTaskType.TaskTypeDevelop && <><IconTerminal2 /><span className="hidden sm:block">开发</span></>}
-                  {taskType === ConstsTaskType.TaskTypeDesign && <><IconVocabulary /><span className="hidden sm:block">设计</span></>}
-                  {taskType === ConstsTaskType.TaskTypeReview && <><IconBug /><span className="hidden sm:block">审查</span></>}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="p-0" align="start">
-                <Command>
-                  <CommandList>
-                    <CommandGroup>
-                      <CommandItem value={ConstsTaskType.TaskTypeDevelop} onSelect={() => {
-                        setTaskType(ConstsTaskType.TaskTypeDevelop);
-                        setTaskTypePopoverOpen(false);
-                      }} >
-                        <div className="flex flex-row gap-2 items-center" >
-                          <div className="size-8 bg-accent rounded-full flex items-center justify-center">
-                            <IconTerminal2 className="size-5 text-foreground" />
-                          </div>
-                          <div className="flex flex-col" >
-                            <div className="font-bold">开发</div>
-                            <div className="text-muted-foreground text-xs">根据需求执行开发编码任务</div>
-                          </div>
-                        </div>
-                      </CommandItem>
-                      <CommandItem value={ConstsTaskType.TaskTypeDesign} onSelect={() => {
-                        setTaskType(ConstsTaskType.TaskTypeDesign);
-                        setTaskTypePopoverOpen(false);
-                      }}>
-                        <div className="flex flex-row gap-2 items-center" >
-                          <div className="size-8 bg-accent rounded-full flex items-center justify-center">
-                            <IconVocabulary className="size-5 text-foreground" />
-                          </div>
-                          <div className="flex flex-col" >
-                            <div className="font-bold">设计</div>
-                            <div className="text-muted-foreground text-xs">进行架构设计，输出技术方案与设计文档</div>
-                          </div>
-                        </div>
-                      </CommandItem>
-                      <CommandItem value={ConstsTaskType.TaskTypeReview} onSelect={() => {
-                        setTaskType(ConstsTaskType.TaskTypeReview);
-                        setTaskTypePopoverOpen(false);
-                      }}>
-                        <div className="flex flex-row gap-2 items-center" >
-                          <div className="size-8 bg-accent rounded-full flex items-center justify-center">
-                            <IconBug className="size-5 text-foreground" />
-                          </div>
-                          <div className="flex flex-col" >
-                            <div className="font-bold">审查</div>
-                            <div className="text-muted-foreground text-xs">审查代码，识别风险，提出改进建议</div>
-                          </div>
-                        </div>
-                      </CommandItem>
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
             <DropdownMenu open={codeDropdownOpen}             onOpenChange={(open) => {
               setCodeDropdownOpen(open);
               if (open) {
@@ -600,21 +493,8 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
                             </DropdownMenuSubTrigger>
                             <DropdownMenuPortal>
                               <DropdownMenuSubContent className="max-h-[320px] overflow-y-auto min-w-[380px] p-0">
-                                {isLoading ? (
-                                  <Empty className="border border-dashed m-2">
-                                    <EmptyHeader>
-                                      <EmptyMedia variant="icon">
-                                        <Spinner className="size-5" />
-                                      </EmptyMedia>
-                                      <EmptyDescription>加载中...</EmptyDescription>
-                                    </EmptyHeader>
-                                  </Empty>
-                                ) : repos.length === 0 ? (
-                                  <div className="px-3 py-4">
-                                    <span className="text-sm text-muted-foreground">没有仓库</span>
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-col bg-popover p-2">
+                                <div className="flex flex-col bg-popover p-2">
+                                  <div className="flex items-center gap-2">
                                     <Input
                                       placeholder="搜索仓库..."
                                       className="text-sm w-full min-w-0"
@@ -622,43 +502,70 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
                                       onChange={(e) => setIdentitySearch((prev) => ({ ...prev, [identityId]: e.target.value }))}
                                       onKeyDown={(e) => e.stopPropagation()}
                                     />
-                                    <Separator className="my-2" />
-                                    <div className="grid gap-2 overflow-y-auto max-h-[240px]">
-                                      {filteredRepos.length === 0 ? (
-                                        <div className="py-6 text-center text-sm text-muted-foreground">
-                                          {search.trim() ? "未找到匹配的仓库" : null}
-                                        </div>
-                                      ) : (
-                                        filteredRepos.map((option) => {
-                                          const repoUrl = option.repository.url?.trim() || "";
-                                          if (!repoUrl) return null;
-                                          const repoName = (option.repository.full_name || repoUrl).replace(`${option.username}/`, "");
-                                          const desc = option.repository.description;
-                                          return (
-                                            <DropdownMenuItem
-                                              key={`${option.gitIdentityId}:${repoUrl}`}
-                                              onSelect={() => {
-                                                setSelectedRepo(repoUrl);
-                                                setSelectedRepoDisplayName(repoName);
-                                                setSelectedIdentityId(option.gitIdentityId);
-                                                setSelectedRepoFromMyRepos(true);
-                                              }}
-                                              className="flex flex-col items-start gap-0.5 py-1 cursor-pointer min-w-0 max-w-full"
-                                            >
-                                              <div className="flex items-center gap-2 w-full min-w-0 max-w-[320px]">
-                                                {getRepoIcon(repoUrl)}
-                                                <span className="truncate flex-1 text-sm" title={repoName}>{repoName}</span>
-                                              </div>
-                                              <span className="text-xs text-muted-foreground truncate w-full max-w-[400px] pl-6" title={desc || undefined}>
-                                                {desc || "暂无描述"}
-                                              </span>
-                                            </DropdownMenuItem>
-                                          );
-                                        })
-                                      )}
-                                    </div>
+                                    <Button
+                                      type="button"
+                                      size="icon-sm"
+                                      variant="outline"
+                                      className="shrink-0"
+                                      disabled={isLoading}
+                                      aria-label="刷新仓库列表"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void loadReposForAllIdentities(true, identityId);
+                                      }}
+                                    >
+                                      <IconReload className={cn("size-4", isLoading && "animate-spin")} />
+                                    </Button>
                                   </div>
-                                )}
+                                  <Separator className="my-2" />
+                                  <div className="grid gap-2 overflow-y-auto max-h-[240px]">
+                                    {isLoading ? (
+                                      <Empty className="border border-dashed">
+                                        <EmptyHeader>
+                                          <EmptyMedia variant="icon">
+                                            <Spinner className="size-5" />
+                                          </EmptyMedia>
+                                          <EmptyDescription>加载中...</EmptyDescription>
+                                        </EmptyHeader>
+                                      </Empty>
+                                    ) : repos.length === 0 ? (
+                                      <div className="py-6 text-center text-sm text-muted-foreground">
+                                        没有仓库
+                                      </div>
+                                    ) : filteredRepos.length === 0 ? (
+                                      <div className="py-6 text-center text-sm text-muted-foreground">
+                                        {search.trim() ? "未找到匹配的仓库" : null}
+                                      </div>
+                                    ) : (
+                                      filteredRepos.map((option) => {
+                                        const repoUrl = option.repository.url?.trim() || "";
+                                        if (!repoUrl) return null;
+                                        const repoName = (option.repository.full_name || repoUrl).replace(`${option.username}/`, "");
+                                        const desc = option.repository.description;
+                                        return (
+                                          <DropdownMenuItem
+                                            key={`${option.gitIdentityId}:${repoUrl}`}
+                                            onSelect={() => {
+                                              setSelectedRepo(repoUrl);
+                                              setSelectedRepoDisplayName(repoName);
+                                              setSelectedIdentityId(option.gitIdentityId);
+                                              setSelectedRepoFromMyRepos(true);
+                                            }}
+                                            className="flex flex-col items-start gap-0.5 py-1 cursor-pointer min-w-0 max-w-full"
+                                          >
+                                            <div className="flex items-center gap-2 w-full min-w-0 max-w-[320px]">
+                                              {getRepoIcon(repoUrl)}
+                                              <span className="truncate flex-1 text-sm" title={repoName}>{repoName}</span>
+                                            </div>
+                                            <span className="text-xs text-muted-foreground truncate w-full max-w-[400px] pl-6" title={desc || undefined}>
+                                              {desc || "暂无描述"}
+                                            </span>
+                                          </DropdownMenuItem>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </div>
                               </DropdownMenuSubContent>
                             </DropdownMenuPortal>
                           </DropdownMenuSub>
@@ -726,55 +633,40 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
                 </DropdownMenuSub>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Popover open={skillPopoverOpen} onOpenChange={setSkillPopoverOpen} >
-              <PopoverTrigger asChild>
-                <Button size="sm" variant="outline" className={cn("rounded-full", selectedSkill.length > 0 ? "text-primary hover:text-primary" : "")}>
-                  <IconPuzzle />
-                  <span className="hidden sm:block">
-                    {selectedSkill.length > 0 ? `${selectedSkill.length} 个技能` : '技能'}
-                  </span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="flex p-2 w-fit max-w-[90vw] md:max-w-xl max-h-[30vh] overflow-hidden" align="start">
-                <Tabs className="flex flex-row">
-                  <TabsList className="flex flex-col h-full justify-start overflow-y-auto bg-background p-0 -mr-2 pr-2 gap-1">
-                    {skillTags.map((tag, index) => (
-                      <TabsTrigger key={index} value={tag} className="w-full text-xs justify-start hover:bg-sidebar-accent data-[state=active]:bg-accent data-[state=active]:shadow-none">
-                        {getSkillTagIcon(tag)}
-                        {tag}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                  {skillTags.map((tag, index) => (
-                    <TabsContent key={index} value={tag} className="border rounded-md p-1 overflow-y-auto bg-background">
-                      {skillList.filter(skill => {
-                        return (skill.tags || []).includes(tag) || tag === "全部";
-                      }).map((skill, skillIndex) => (
-                        <SkillItem 
-                          key={skillIndex} 
-                          skill={skill} 
-                          selectedSkills={selectedSkill}
-                          onSkillChange={handleSkillChange}
-                        />
-                      ))}
-                    </TabsContent>
-                  ))}
-                </Tabs>
-              </PopoverContent>
-            </Popover>
+            {!IS_OFFLINE_EDITION && (
+              <TaskSkillSelector
+                open={skillPopoverOpen}
+                onOpenChange={setSkillPopoverOpen}
+                selectedSkills={selectedSkill}
+                skills={skillList}
+                skillTags={skillTags}
+                activeSkillTag={activeSkillTag}
+                onActiveSkillTagChange={setActiveSkillTag}
+                onSkillChange={handleSkillChange}
+                triggerClassName="rounded-full"
+                labelClassName="hidden sm:block"
+              />
+            )}
           </div>
           <div className="flex flex-row gap-2">
-            <VoiceInputButton
-              disabled={false}
-              onTextRecognized={(text) => setTaskContent(text)}
-            />
-            <Button size="sm" className="rounded-full" disabled={creatingTask} onClick={handleExecuteButtonClick}>
+            {!IS_OFFLINE_EDITION && (
+              <VoiceInputButton
+                disabled={false}
+                onTextRecognized={(text) => setTaskContent(text)}
+              />
+            )}
+            <Button size="sm" className="rounded-full" disabled={creatingTask || taskContentTooLong} onClick={handleExecuteButtonClick}>
               <span className="hidden sm:block">执行</span>
               {creatingTask ? <Spinner /> : <IconSend />}
             </Button>
           </div>
         </InputGroupAddon>
       </InputGroup>
+      {taskContentTooLong && (
+        <div className="mt-1 px-1 text-xs text-destructive">
+          已超出 {taskContentLength - MAX_TASK_CONTENT_LENGTH} 字，最多 {MAX_TASK_CONTENT_LENGTH} 字，无法发送。
+        </div>
+      )}
 
       {/* 运行参数对话框 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -785,26 +677,13 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
           <Field>
             <FieldLabel>大模型</FieldLabel>
             <FieldContent>
-              <Select value={selectedModelId} onValueChange={setSelectedModelId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="选择大模型" />
-                </SelectTrigger>
-                <SelectContent>
-                  {models.map((model) => (
-                    <SelectItem 
-                      key={model.id} 
-                      value={model.id || ""} 
-                      disabled={!adaptedModelForTool() || !canUseModelBySubscription(model, subscription)}>
-                      <Icon name={getBrandFromModelName(model.model || '')} className="size-4" />
-                      {getModelHealthBadge(model)}
-                      {model.model}
-                      {model.is_default && <Badge>默认</Badge>}
-                      {model.owner?.type !== ConstsOwnerType.OwnerTypePublic && getOwnerTypeBadge(model.owner)}
-                      {getPublicModelMetaBadges(model)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ModelSelect
+                models={models}
+                selectedModel={selectedModel}
+                selectedModelId={selectedModelId}
+                setSelectedModelId={setSelectedModelId}
+                subscription={subscription}
+              />
             </FieldContent>
           </Field>
           {selectedRepo && !selectedRepoDisplayName.endsWith('.zip') && <>
@@ -849,18 +728,20 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
                   <SelectValue placeholder="选择开发工具" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={"public_host"}>
-                    <div className="flex items-center gap-2">
-                      <span>MonkeyCode</span>
-                      <Badge>免费</Badge>
-                    </div>
-                  </SelectItem>
+                  {!IS_OFFLINE_EDITION && (
+                    <SelectItem value={"public_host"}>
+                      <div className="flex items-center gap-2">
+                        <span>MonkeyCode</span>
+                        <Badge className="!text-primary-foreground">免费</Badge>
+                      </div>
+                    </SelectItem>
+                  )}
                   {hosts.map((host) => {
                     return (
                       <SelectItem
                         key={host.id}
                         value={host.id!}
-                        disabled={host.status !== ConstsHostStatus.HostStatusOnline || selectedPublicModel}>
+                        disabled={host.status !== ConstsHostStatus.HostStatusOnline || (!IS_OFFLINE_EDITION && selectedPublicModel)}>
                         <div className="flex items-center gap-2">
                           <span>{host.remark || `${host.name}-${host.external_ip}`}</span>
                           {getHostBadges(host)}
@@ -887,7 +768,6 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
                           <div className="flex items-center gap-2">
                             <Icon name={getOSFromImageName(image.name || '')} className="h-4 w-4" />
                             <span>{image.remark || getImageShortName(image.name || '')}</span>
-                            {image.is_default && <Badge>默认</Badge>}
                             {getOwnerTypeBadge(image.owner)}
                           </div>
                           </TooltipTrigger>
@@ -905,7 +785,7 @@ export function TaskInput({ repos, onTaskCreated }: TaskInputProps) {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               取消
             </Button>
-            <Button disabled={creatingTask} onClick={() => {
+            <Button disabled={creatingTask || taskContentTooLong} onClick={() => {
               readyToExecuteTask();
             }}>
               {creatingTask && <Spinner />}

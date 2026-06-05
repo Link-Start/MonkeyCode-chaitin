@@ -19,6 +19,7 @@ import { toast } from "sonner"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty"
+import { useTheme } from "@/components/theme-provider"
 
 interface TaskTerminalPanelProps {
   envid?: string
@@ -27,6 +28,7 @@ interface TaskTerminalPanelProps {
 }
 
 export function TaskTerminalPanel({ envid, disabled, onClosePanel }: TaskTerminalPanelProps) {
+  const { resolvedTheme } = useTheme()
   const [sessions, setSessions] = useState<DomainTerminal[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [signal, setSignal] = useState<number>(0)
@@ -113,6 +115,8 @@ export function TaskTerminalPanel({ envid, disabled, onClosePanel }: TaskTermina
   }, [currentSessionId, sessions])
 
   const displaySessions = [...sessions]
+  const terminalTheme = resolvedTheme === "dark" ? "Dracula" : "Tomorrow"
+
   if (currentSessionId && !sessions.some((s) => s.id === currentSessionId)) {
     displaySessions.unshift({
       id: currentSessionId,
@@ -136,9 +140,9 @@ export function TaskTerminalPanel({ envid, disabled, onClosePanel }: TaskTermina
       return <Spinner className="size-3.5 shrink-0" />
     }
     if (connectionStatus === "connected") {
-      return <IconTerminal2 className="size-3.5 text-green-500 shrink-0" />
+      return <IconTerminal2 className="size-3.5 text-success shrink-0" />
     }
-    return <IconAlertCircle className="size-3.5 text-red-500 shrink-0" />
+    return <IconAlertCircle className="size-3.5 text-danger shrink-0" />
   }
 
   const sidebar = (
@@ -170,7 +174,7 @@ export function TaskTerminalPanel({ envid, disabled, onClosePanel }: TaskTermina
                 <div
                   key={sid}
                   className={cn(
-                    "group flex items-center gap-2 rounded-md border px-2 py-1 transition-colors",
+                    "group flex items-center gap-2 rounded-md border px-2 transition-colors",
                     isActive
                       ? "border-transparent bg-muted text-foreground"
                       : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
@@ -178,7 +182,7 @@ export function TaskTerminalPanel({ envid, disabled, onClosePanel }: TaskTermina
                 >
                   <button
                     type="button"
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left"
                     onClick={() => handleSelectSession(sid)}
                   >
                     {getTabIcon(sid)}
@@ -187,7 +191,7 @@ export function TaskTerminalPanel({ envid, disabled, onClosePanel }: TaskTermina
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="size-5 shrink-0 opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-primary"
+                    className="hidden size-5 shrink-0 group-hover:flex hover:bg-destructive/10 hover:text-danger"
                     onClick={(e) => handleCloseTab(e, sid)}
                   >
                     <IconX className="size-3.5" />
@@ -232,7 +236,7 @@ export function TaskTerminalPanel({ envid, disabled, onClosePanel }: TaskTermina
         {currentSessionId ? (
           <Terminal
             ws={`/api/v1/users/hosts/vms/${envid}/terminals/connect?terminal_id=${currentSessionId}`}
-            theme="Tomorrow"
+            theme={terminalTheme}
             signal={signal}
             onTitleChanged={onTitleChanged}
             onUserNameChanged={() => {}}

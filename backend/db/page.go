@@ -81,6 +81,20 @@ func (_m *GitIdentityQuery) Page(ctx context.Context, page, size int) ([]*GitIde
 	return rs, &PageInfo{HasNextPage: has, TotalCount: int64(cnt)}, nil
 }
 
+func (_m *GitTaskQuery) Page(ctx context.Context, page, size int) ([]*GitTask, *PageInfo, error) {
+	cnt, err := _m.Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	offset := size * (page - 1)
+	rs, err := _m.Offset(offset).Limit(size).All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	has := (page * size) < cnt
+	return rs, &PageInfo{HasNextPage: has, TotalCount: int64(cnt)}, nil
+}
+
 func (_m *HostQuery) Page(ctx context.Context, page, size int) ([]*Host, *PageInfo, error) {
 	cnt, err := _m.Count(ctx)
 	if err != nil {
@@ -96,6 +110,48 @@ func (_m *HostQuery) Page(ctx context.Context, page, size int) ([]*Host, *PageIn
 }
 
 func (_m *ImageQuery) Page(ctx context.Context, page, size int) ([]*Image, *PageInfo, error) {
+	cnt, err := _m.Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	offset := size * (page - 1)
+	rs, err := _m.Offset(offset).Limit(size).All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	has := (page * size) < cnt
+	return rs, &PageInfo{HasNextPage: has, TotalCount: int64(cnt)}, nil
+}
+
+func (_m *MCPToolQuery) Page(ctx context.Context, page, size int) ([]*MCPTool, *PageInfo, error) {
+	cnt, err := _m.Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	offset := size * (page - 1)
+	rs, err := _m.Offset(offset).Limit(size).All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	has := (page * size) < cnt
+	return rs, &PageInfo{HasNextPage: has, TotalCount: int64(cnt)}, nil
+}
+
+func (_m *MCPUpstreamQuery) Page(ctx context.Context, page, size int) ([]*MCPUpstream, *PageInfo, error) {
+	cnt, err := _m.Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	offset := size * (page - 1)
+	rs, err := _m.Offset(offset).Limit(size).All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	has := (page * size) < cnt
+	return rs, &PageInfo{HasNextPage: has, TotalCount: int64(cnt)}, nil
+}
+
+func (_m *MCPUserToolSettingQuery) Page(ctx context.Context, page, size int) ([]*MCPUserToolSetting, *PageInfo, error) {
 	cnt, err := _m.Count(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -278,6 +334,20 @@ func (_m *ProjectTaskQuery) Page(ctx context.Context, page, size int) ([]*Projec
 }
 
 func (_m *TaskQuery) Page(ctx context.Context, page, size int) ([]*Task, *PageInfo, error) {
+	cnt, err := _m.Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	offset := size * (page - 1)
+	rs, err := _m.Offset(offset).Limit(size).All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	has := (page * size) < cnt
+	return rs, &PageInfo{HasNextPage: has, TotalCount: int64(cnt)}, nil
+}
+
+func (_m *TaskModelSwitchQuery) Page(ctx context.Context, page, size int) ([]*TaskModelSwitch, *PageInfo, error) {
 	cnt, err := _m.Count(ctx)
 	if err != nil {
 		return nil, nil, err

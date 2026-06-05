@@ -10,14 +10,20 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/pkg/cvt"
 
 	"github.com/chaitin/MonkeyCode/backend/consts"
+	"github.com/chaitin/MonkeyCode/backend/errcode"
 )
+
+type MemberManager interface {
+	AddUser(ctx context.Context, teamUser *TeamUser, req *AddTeamUserReq) (*AddTeamUserResp, error)
+	AddUserWithPassword(ctx context.Context, teamUser *TeamUser, req *AddTeamUserReq) (*AddTeamUserWithPasswordResp, error)
+	AddAdmin(ctx context.Context, teamUser *TeamUser, req *AddTeamAdminReq) (*AddTeamAdminResp, error)
+}
 
 // TeamGroupUserUsecase 团队分组成员业务逻辑接口
 type TeamGroupUserUsecase interface {
 	List(ctx context.Context, teamUser *TeamUser) (*ListTeamGroupsResp, error)
 	Add(ctx context.Context, teamUser *TeamUser, req *AddTeamGroupReq) (*TeamGroup, error)
-	AddUser(ctx context.Context, teamUser *TeamUser, req *AddTeamUserReq) (*AddTeamUserResp, error)
-	AddAdmin(ctx context.Context, teamUser *TeamUser, req *AddTeamAdminReq) (*AddTeamAdminResp, error)
+	ResetPassword(ctx context.Context, teamUser *TeamUser, req *ResetPasswordReq) (*TeamUserPassword, error)
 	Update(ctx context.Context, req *UpdateTeamGroupReq) (*TeamGroup, error)
 	Delete(ctx context.Context, teamUser *TeamUser, req *DeleteTeamGroupReq) error
 	ListGroups(ctx context.Context, req *ListTeamGroupUsersReq) (*ListTeamGroupUsersResp, error)
@@ -34,8 +40,7 @@ type TeamGroupUserRepo interface {
 	List(ctx context.Context, teamID uuid.UUID) ([]*db.TeamGroup, error)
 	Get(ctx context.Context, groupID uuid.UUID) (*db.TeamGroup, error)
 	Create(ctx context.Context, teamID uuid.UUID, req *AddTeamGroupReq) (*db.TeamGroup, error)
-	CreateUsers(ctx context.Context, teamID uuid.UUID, req *AddTeamUserReq) ([]*db.User, error)
-	CreateAdmin(ctx context.Context, teamID uuid.UUID, req *AddTeamAdminReq) (*db.User, error)
+	ResetPassword(ctx context.Context, userID uuid.UUID, newPassword string) error
 	Update(ctx context.Context, req *UpdateTeamGroupReq) (*db.TeamGroup, error)
 	Delete(ctx context.Context, teamID, groupID uuid.UUID) error
 	ListGroupUsers(ctx context.Context, groupID uuid.UUID) ([]*db.TeamGroupMember, error)
@@ -48,7 +53,7 @@ type TeamGroupUserRepo interface {
 	UpdateUser(ctx context.Context, userID uuid.UUID, req *UpdateTeamUserReq) (*db.User, error)
 	GetMembersByIDs(ctx context.Context, teamID uuid.UUID, userIDs []uuid.UUID) ([]*db.TeamMember, error)
 	GetMember(ctx context.Context, teamID, userID uuid.UUID) (*db.TeamMember, error)
-	InitTeam(ctx context.Context, email, name, password string) error
+	InitTeam(ctx context.Context, email, name, password, image string) error
 }
 
 type Team struct {
@@ -253,9 +258,29 @@ type AddTeamUserReq struct {
 	GroupID uuid.UUID `json:"group_id" validate:"omitempty"` // 团队组ID
 }
 
+type AddTeamUserWithPasswordReq struct {
+	Emails    []string          `json:"emails" validate:"required"`
+	GroupID   uuid.UUID         `json:"group_id" validate:"omitempty"`
+	Passwords map[string]string `json:"-" swaggerignore:"true"`
+}
+
 // AddTeamUserResp 创建团队成员响应
 type AddTeamUserResp struct {
 	Users []*TeamUser `json:"users"`
+}
+
+type TeamUserPassword struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type AddTeamUserWithPasswordResp struct {
+	Users     []*TeamUser         `json:"users"`
+	Passwords []*TeamUserPassword `json:"passwords"`
+}
+
+type ResetPasswordReq struct {
+	UserID uuid.UUID `param:"user_id" validate:"required" json:"-" swaggerignore:"true"`
 }
 
 // AddTeamAdminReq 创建团队管理员请求
@@ -290,8 +315,15 @@ type TeamMemberInfo struct {
 
 // ChangePasswordReq 修改密码请求
 type ChangePasswordReq struct {
-	CurrentPassword string `json:"current_password" validate:"omitempty"`         // 当前密码
-	NewPassword     string `json:"new_password" validate:"required,min=8,max=32"` // 新密码
+	CurrentPassword string `json:"current_password" validate:"omitempty"` // 当前密码
+	NewPassword     string `json:"new_password" validate:"required"`      // 新密码
+}
+
+func (r *ChangePasswordReq) Validate() error {
+	if len(r.NewPassword) < 8 || len(r.NewPassword) > 32 {
+		return errcode.ErrPasswordLength
+	}
+	return nil
 }
 
 // ChangePasswordResp 修改密码响应
@@ -309,11 +341,6 @@ type UpdateTeamUserReq struct {
 // UpdateTeamUserResp 更新团队用户信息响应
 type UpdateTeamUserResp struct {
 	User *User `json:"user"`
-}
-
-// ResetPasswordReq 重置密码请求
-type ResetPasswordReq struct {
-	UserIDs []uuid.UUID `json:"user_ids" validate:"required"` // 用户ID列表
 }
 
 // InviteLinkToken 邀请链接令牌

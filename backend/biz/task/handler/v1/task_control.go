@@ -10,7 +10,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/GoYoko/web"
+	"github.com/google/uuid"
 
+	"github.com/chaitin/MonkeyCode/backend/biz/task/service"
 	"github.com/chaitin/MonkeyCode/backend/consts"
 	"github.com/chaitin/MonkeyCode/backend/domain"
 	"github.com/chaitin/MonkeyCode/backend/middleware"
@@ -72,16 +74,33 @@ import (
 //	@Description	```
 //	@Description
 //	@Description	### Type=call, Kind=port_forward_list — 获取端口转发列表
-//	@Description	请求 Data: 无需额外字段
-//	@Description	响应 Data:
-//	@Description	```json
-//	@Description	[{"port":0,"status":"string","process":"string","forward_id":"string?","access_url":"string?","label":"string?","error_message":"string?","whitelist_ips":["string"]}]
-//	@Description	```
-//	@Description
-//	@Description	### Type=call, Kind=restart — 重启任务（无 call-response 返回）
 //	@Description	请求 Data:
 //	@Description	```json
-//	@Description	{"request_id":"string?","load_session":true}
+//	@Description	{"request_id":"string"}
+//	@Description	```
+//	@Description	响应 Data:
+//	@Description	```json
+//	@Description	{"request_id":"string","ports":[{"port":0,"status":"string","process":"string","forward_id":"string?","access_url":"string?","label":"string?","error_message":"string?","whitelist_ips":["string"]}]}
+//	@Description	```
+//	@Description
+//	@Description	### Type=call, Kind=restart — 重启任务
+//	@Description	请求 Data:
+//	@Description	```json
+//	@Description	{"request_id":"string","load_session":true}
+//	@Description	```
+//	@Description	响应 Data:
+//	@Description	```json
+//	@Description	{"id":"uuid","request_id":"string?","success":true,"message":"string","session_id":"string"}
+//	@Description	```
+//	@Description
+//	@Description	### Type=call, Kind=switch_model — 切换运行中任务模型
+//	@Description	请求 Data:
+//	@Description	```json
+//	@Description	{"request_id":"string","model_id":"uuid","load_session":true}
+//	@Description	```
+//	@Description	响应 Data:
+//	@Description	```json
+//	@Description	{"id":"uuid","request_id":"string?","success":true,"message":"string","session_id":"string","model":{}}
 //	@Description	```
 //	@Description
 //	@Description	### Type=sync-my-ip — 同步 Web 客户端真实 IP
@@ -92,9 +111,9 @@ import (
 //	@Description
 //	@Description	## 下行消息
 //	@Description
-//	@Description	- Type=call-response: 同步请求响应（Kind 与请求一致，restart 除外）。失败时 Data 为:
+//	@Description	- Type=call-response: 同步请求响应（Kind 与请求一致）。失败时 Data 为:
 //	@Description	```json
-//	@Description	{"error":"string"}
+//	@Description	{"request_id":"string","success":false,"error":"string"}
 //	@Description	```
 //	@Description	- Type=task-event: 任务事件（从 TaskLive 订阅转发）
 //	@Description	- Type=ping: 心跳（无 Data）
@@ -123,6 +142,9 @@ func (h *TaskHandler) Control(c *web.Context, req domain.TaskControlReq) error {
 
 	logger := h.logger.With("task_id", task.ID, "fn", "task.control")
 	taskID := task.ID.String()
+	if err := h.taskActivity.Refresh(c.Request().Context(), task.ID); err != nil {
+		logger.WarnContext(c.Request().Context(), "failed to refresh task last active on control connect", "error", err)
+	}
 
 	// 连接建立：刷新空闲计时器
 	if vm := task.VirtualMachine; vm != nil {
@@ -131,16 +153,18 @@ func (h *TaskHandler) Control(c *web.Context, req domain.TaskControlReq) error {
 		}
 
 		// VM 处于休眠状态时自动恢复
-		go func() {
-			if err := h.taskflow.VirtualMachiner().Resume(c.Request().Context(), &taskflow.ResumeVirtualMachineReq{
-				HostID:        vm.Host.InternalID,
-				UserID:        task.UserID.String(),
-				ID:            vm.ID,
-				EnvironmentID: vm.EnvironmentID,
-			}); err != nil {
-				logger.WarnContext(context.Background(), "failed to resume vm on control connect", "error", err)
-			}
-		}()
+		if vm.Status == taskflow.VirtualMachineStatusHibernated {
+			go func() {
+				if err := h.taskflow.VirtualMachiner().Resume(c.Request().Context(), &taskflow.ResumeVirtualMachineReq{
+					HostID:        vm.Host.InternalID,
+					UserID:        task.UserID.String(),
+					ID:            vm.ID,
+					EnvironmentID: vm.EnvironmentID,
+				}); err != nil {
+					logger.WarnContext(context.Background(), "failed to resume vm on control connect", "error", err)
+				}
+			}()
+		}
 	}
 
 	h.controlConns.Add(taskID, wsConn)
@@ -163,7 +187,7 @@ func (h *TaskHandler) Control(c *web.Context, req domain.TaskControlReq) error {
 	})
 
 	g.Go(func() error {
-		return h.controlReadMessages(ctx, wsConn, logger, task)
+		return h.controlReadMessages(ctx, wsConn, logger, user, task)
 	})
 
 	g.Go(func() error {
@@ -173,7 +197,7 @@ func (h *TaskHandler) Control(c *web.Context, req domain.TaskControlReq) error {
 	// 定期刷新空闲计时器，保持 VM 活跃
 	if vm := task.VirtualMachine; vm != nil {
 		g.Go(func() error {
-			return h.controlKeepAlive(ctx, vm.ID)
+			return h.controlKeepAlive(ctx, task.ID, vm.ID)
 		})
 	}
 
@@ -202,23 +226,36 @@ func (h *TaskHandler) controlPing(ctx context.Context, wsConn *ws.WebsocketManag
 }
 
 // controlKeepAlive 定期刷新空闲计时器，防止 VM 被误判空闲
-func (h *TaskHandler) controlKeepAlive(ctx context.Context, vmID string) error {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
+func (h *TaskHandler) controlKeepAlive(ctx context.Context, taskID uuid.UUID, vmID string) error {
+	if err := h.idleRefresher.Refresh(ctx, vmID); err != nil {
+		h.logger.WarnContext(ctx, "keepalive refresh failed", "vmID", vmID, "error", err)
+	}
+	if err := h.taskActivity.Refresh(ctx, taskID); err != nil {
+		h.logger.WarnContext(ctx, "task activity refresh failed", "taskID", taskID, "error", err)
+	}
+
+	idleTicker := time.NewTicker(1 * time.Minute)
+	activityTicker := time.NewTicker(service.TaskActivityRefreshInterval)
+	defer idleTicker.Stop()
+	defer activityTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
+		case <-idleTicker.C:
 			if err := h.idleRefresher.Refresh(ctx, vmID); err != nil {
 				h.logger.WarnContext(ctx, "keepalive refresh failed", "vmID", vmID, "error", err)
+			}
+		case <-activityTicker.C:
+			if err := h.taskActivity.Refresh(ctx, taskID); err != nil {
+				h.logger.WarnContext(ctx, "task activity refresh failed", "taskID", taskID, "error", err)
 			}
 		}
 	}
 }
 
 // controlReadMessages 读取客户端消息并分发处理
-func (h *TaskHandler) controlReadMessages(ctx context.Context, wsConn *ws.WebsocketManager, logger *slog.Logger, task *domain.Task) error {
+func (h *TaskHandler) controlReadMessages(ctx context.Context, wsConn *ws.WebsocketManager, logger *slog.Logger, user *domain.User, task *domain.Task) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -236,10 +273,11 @@ func (h *TaskHandler) controlReadMessages(ctx context.Context, wsConn *ws.Websoc
 			logger.WarnContext(ctx, "failed to unmarshal control message", "error", err, "data", string(d))
 			continue
 		}
+		h.logger.With("task req", m, "task_id", task.ID).DebugContext(ctx, "recv task message")
 
 		switch m.Type {
 		case consts.TaskStreamTypeCall:
-			h.handleControlCall(ctx, wsConn, logger, task, m)
+			h.handleControlCall(ctx, wsConn, logger, user, task, m)
 		case consts.TaskStreamTypeSyncWebClientIP:
 			h.handleSyncClientIP(ctx, wsConn, logger, m.Data)
 		}
@@ -247,25 +285,12 @@ func (h *TaskHandler) controlReadMessages(ctx context.Context, wsConn *ws.Websoc
 }
 
 // handleControlCall 处理 call 消息，调用 taskflow HTTP 接口并写回响应
-func (h *TaskHandler) handleControlCall(ctx context.Context, wsConn *ws.WebsocketManager, logger *slog.Logger, task *domain.Task, m domain.TaskStream) {
+func (h *TaskHandler) handleControlCall(ctx context.Context, wsConn *ws.WebsocketManager, logger *slog.Logger, user *domain.User, task *domain.Task, m domain.TaskStream) {
 	taskID := task.ID.String()
-
-	// restart 是 fire-and-forget，无响应
-	if m.Kind == "restart" {
-		var req taskflow.RestartTaskReq
-		if err := json.Unmarshal(m.Data, &req); err != nil {
-			logger.WarnContext(ctx, "failed to unmarshal restart task", "error", err)
-			return
-		}
-		req.ID = task.ID
-		if err := h.taskflow.TaskManager().Restart(ctx, req); err != nil {
-			logger.WarnContext(ctx, "failed to restart task", "error", err)
-		}
-		return
-	}
 
 	var result any
 	var err error
+	var requestID string
 
 	switch m.Kind {
 	case "repo_file_diff":
@@ -275,6 +300,7 @@ func (h *TaskHandler) handleControlCall(ctx context.Context, wsConn *ws.Websocke
 			return
 		}
 		req.TaskId = taskID
+		requestID = req.RequestId
 		result, err = h.taskflow.TaskManager().FileDiff(ctx, req)
 
 	case "repo_file_list":
@@ -284,6 +310,7 @@ func (h *TaskHandler) handleControlCall(ctx context.Context, wsConn *ws.Websocke
 			return
 		}
 		req.TaskId = taskID
+		requestID = req.RequestId
 		result, err = h.taskflow.TaskManager().ListFiles(ctx, req)
 
 	case "repo_read_file":
@@ -293,6 +320,7 @@ func (h *TaskHandler) handleControlCall(ctx context.Context, wsConn *ws.Websocke
 			return
 		}
 		req.TaskId = taskID
+		requestID = req.RequestId
 		result, err = h.taskflow.TaskManager().ReadFile(ctx, req)
 
 	case "repo_file_changes":
@@ -302,6 +330,7 @@ func (h *TaskHandler) handleControlCall(ctx context.Context, wsConn *ws.Websocke
 			return
 		}
 		req.TaskId = taskID
+		requestID = req.RequestId
 		result, err = h.taskflow.TaskManager().FileChanges(ctx, req)
 
 	case "port_forward_list":
@@ -311,7 +340,29 @@ func (h *TaskHandler) handleControlCall(ctx context.Context, wsConn *ws.Websocke
 			return
 		}
 		req.ID = task.VirtualMachine.ID
+		requestID = req.RequestId
 		result, err = h.taskflow.PortForwarder().List(ctx, req)
+
+	case "restart":
+		var req taskflow.RestartTaskReq
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			logger.WarnContext(ctx, "failed to unmarshal restart task", "error", err)
+			return
+		}
+		req.ID = task.ID
+		req.ExecutionConfig = nil
+		req.LogStore = string(task.LogStore)
+		requestID = req.RequestId
+		result, err = h.taskflow.TaskManager().Restart(ctx, req)
+
+	case "switch_model":
+		var req domain.SwitchTaskModelReq
+		if err := json.Unmarshal(m.Data, &req); err != nil {
+			logger.WarnContext(ctx, "failed to unmarshal switch model", "error", err)
+			return
+		}
+		requestID = req.RequestID
+		result, err = h.usecase.SwitchModel(ctx, user, task.ID, req)
 
 	default:
 		return
@@ -319,7 +370,11 @@ func (h *TaskHandler) handleControlCall(ctx context.Context, wsConn *ws.Websocke
 
 	if err != nil {
 		logger.WarnContext(ctx, "control call failed", "error", err, "kind", m.Kind)
-		errData, _ := json.Marshal(map[string]string{"error": err.Error()})
+		errData, _ := json.Marshal(map[string]any{
+			"request_id": requestID,
+			"success":    false,
+			"error":      err.Error(),
+		})
 		wsConn.WriteJSON(domain.TaskStream{
 			Type:      consts.TaskStreamTypeCallResponse,
 			Data:      errData,

@@ -11,8 +11,12 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/gitbottask"
 	"github.com/chaitin/MonkeyCode/backend/db/gitbotuser"
 	"github.com/chaitin/MonkeyCode/backend/db/gitidentity"
+	"github.com/chaitin/MonkeyCode/backend/db/gittask"
 	"github.com/chaitin/MonkeyCode/backend/db/host"
 	"github.com/chaitin/MonkeyCode/backend/db/image"
+	"github.com/chaitin/MonkeyCode/backend/db/mcptool"
+	"github.com/chaitin/MonkeyCode/backend/db/mcpupstream"
+	"github.com/chaitin/MonkeyCode/backend/db/mcpusertoolsetting"
 	"github.com/chaitin/MonkeyCode/backend/db/model"
 	"github.com/chaitin/MonkeyCode/backend/db/modelapikey"
 	"github.com/chaitin/MonkeyCode/backend/db/modelpricing"
@@ -26,6 +30,7 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/projectissuecomment"
 	"github.com/chaitin/MonkeyCode/backend/db/projecttask"
 	"github.com/chaitin/MonkeyCode/backend/db/task"
+	"github.com/chaitin/MonkeyCode/backend/db/taskmodelswitch"
 	"github.com/chaitin/MonkeyCode/backend/db/taskusagestat"
 	"github.com/chaitin/MonkeyCode/backend/db/taskvirtualmachine"
 	"github.com/chaitin/MonkeyCode/backend/db/team"
@@ -103,6 +108,16 @@ func init() {
 	gitidentity.DefaultUpdatedAt = gitidentityDescUpdatedAt.Default.(func() time.Time)
 	// gitidentity.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	gitidentity.UpdateDefaultUpdatedAt = gitidentityDescUpdatedAt.UpdateDefault.(func() time.Time)
+	gittaskFields := schema.GitTask{}.Fields()
+	_ = gittaskFields
+	// gittaskDescSubjectType is the schema descriptor for subject_type field.
+	gittaskDescSubjectType := gittaskFields[3].Descriptor()
+	// gittask.SubjectTypeValidator is a validator for the "subject_type" field. It is called by the builders before save.
+	gittask.SubjectTypeValidator = gittaskDescSubjectType.Validators[0].(func(string) error)
+	// gittaskDescCreatedAt is the schema descriptor for created_at field.
+	gittaskDescCreatedAt := gittaskFields[11].Descriptor()
+	// gittask.DefaultCreatedAt holds the default value on creation for the created_at field.
+	gittask.DefaultCreatedAt = gittaskDescCreatedAt.Default.(func() time.Time)
 	hostMixin := schema.Host{}.Mixin()
 	hostMixinHooks0 := hostMixin[0].Hooks()
 	host.Hooks[0] = hostMixinHooks0[0]
@@ -145,6 +160,208 @@ func init() {
 	image.DefaultUpdatedAt = imageDescUpdatedAt.Default.(func() time.Time)
 	// image.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	image.UpdateDefaultUpdatedAt = imageDescUpdatedAt.UpdateDefault.(func() time.Time)
+	mcptoolMixin := schema.MCPTool{}.Mixin()
+	mcptoolMixinHooks0 := mcptoolMixin[0].Hooks()
+	mcptool.Hooks[0] = mcptoolMixinHooks0[0]
+	mcptoolMixinInters0 := mcptoolMixin[0].Interceptors()
+	mcptool.Interceptors[0] = mcptoolMixinInters0[0]
+	mcptoolFields := schema.MCPTool{}.Fields()
+	_ = mcptoolFields
+	// mcptoolDescName is the schema descriptor for name field.
+	mcptoolDescName := mcptoolFields[2].Descriptor()
+	// mcptool.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	mcptool.NameValidator = func() func(string) error {
+		validators := mcptoolDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mcptoolDescNamespacedName is the schema descriptor for namespaced_name field.
+	mcptoolDescNamespacedName := mcptoolFields[3].Descriptor()
+	// mcptool.NamespacedNameValidator is a validator for the "namespaced_name" field. It is called by the builders before save.
+	mcptool.NamespacedNameValidator = func() func(string) error {
+		validators := mcptoolDescNamespacedName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(namespaced_name string) error {
+			for _, fn := range fns {
+				if err := fn(namespaced_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mcptoolDescPrice is the schema descriptor for price field.
+	mcptoolDescPrice := mcptoolFields[8].Descriptor()
+	// mcptool.DefaultPrice holds the default value on creation for the price field.
+	mcptool.DefaultPrice = mcptoolDescPrice.Default.(int64)
+	// mcptoolDescEnabled is the schema descriptor for enabled field.
+	mcptoolDescEnabled := mcptoolFields[9].Descriptor()
+	// mcptool.DefaultEnabled holds the default value on creation for the enabled field.
+	mcptool.DefaultEnabled = mcptoolDescEnabled.Default.(bool)
+	// mcptoolDescVersionHash is the schema descriptor for version_hash field.
+	mcptoolDescVersionHash := mcptoolFields[10].Descriptor()
+	// mcptool.VersionHashValidator is a validator for the "version_hash" field. It is called by the builders before save.
+	mcptool.VersionHashValidator = mcptoolDescVersionHash.Validators[0].(func(string) error)
+	// mcptoolDescCreatedAt is the schema descriptor for created_at field.
+	mcptoolDescCreatedAt := mcptoolFields[12].Descriptor()
+	// mcptool.DefaultCreatedAt holds the default value on creation for the created_at field.
+	mcptool.DefaultCreatedAt = mcptoolDescCreatedAt.Default.(func() time.Time)
+	// mcptoolDescUpdatedAt is the schema descriptor for updated_at field.
+	mcptoolDescUpdatedAt := mcptoolFields[13].Descriptor()
+	// mcptool.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	mcptool.DefaultUpdatedAt = mcptoolDescUpdatedAt.Default.(func() time.Time)
+	// mcptool.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	mcptool.UpdateDefaultUpdatedAt = mcptoolDescUpdatedAt.UpdateDefault.(func() time.Time)
+	mcpupstreamMixin := schema.MCPUpstream{}.Mixin()
+	mcpupstreamMixinHooks0 := mcpupstreamMixin[0].Hooks()
+	mcpupstream.Hooks[0] = mcpupstreamMixinHooks0[0]
+	mcpupstreamMixinInters0 := mcpupstreamMixin[0].Interceptors()
+	mcpupstream.Interceptors[0] = mcpupstreamMixinInters0[0]
+	mcpupstreamFields := schema.MCPUpstream{}.Fields()
+	_ = mcpupstreamFields
+	// mcpupstreamDescName is the schema descriptor for name field.
+	mcpupstreamDescName := mcpupstreamFields[1].Descriptor()
+	// mcpupstream.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	mcpupstream.NameValidator = func() func(string) error {
+		validators := mcpupstreamDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mcpupstreamDescSlug is the schema descriptor for slug field.
+	mcpupstreamDescSlug := mcpupstreamFields[2].Descriptor()
+	// mcpupstream.SlugValidator is a validator for the "slug" field. It is called by the builders before save.
+	mcpupstream.SlugValidator = func() func(string) error {
+		validators := mcpupstreamDescSlug.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(slug string) error {
+			for _, fn := range fns {
+				if err := fn(slug); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mcpupstreamDescType is the schema descriptor for type field.
+	mcpupstreamDescType := mcpupstreamFields[5].Descriptor()
+	// mcpupstream.DefaultType holds the default value on creation for the type field.
+	mcpupstream.DefaultType = mcpupstreamDescType.Default.(string)
+	// mcpupstream.TypeValidator is a validator for the "type" field. It is called by the builders before save.
+	mcpupstream.TypeValidator = func() func(string) error {
+		validators := mcpupstreamDescType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(_type string) error {
+			for _, fn := range fns {
+				if err := fn(_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mcpupstreamDescURL is the schema descriptor for url field.
+	mcpupstreamDescURL := mcpupstreamFields[6].Descriptor()
+	// mcpupstream.URLValidator is a validator for the "url" field. It is called by the builders before save.
+	mcpupstream.URLValidator = mcpupstreamDescURL.Validators[0].(func(string) error)
+	// mcpupstreamDescEnabled is the schema descriptor for enabled field.
+	mcpupstreamDescEnabled := mcpupstreamFields[9].Descriptor()
+	// mcpupstream.DefaultEnabled holds the default value on creation for the enabled field.
+	mcpupstream.DefaultEnabled = mcpupstreamDescEnabled.Default.(bool)
+	// mcpupstreamDescHealthStatus is the schema descriptor for health_status field.
+	mcpupstreamDescHealthStatus := mcpupstreamFields[10].Descriptor()
+	// mcpupstream.DefaultHealthStatus holds the default value on creation for the health_status field.
+	mcpupstream.DefaultHealthStatus = mcpupstreamDescHealthStatus.Default.(string)
+	// mcpupstream.HealthStatusValidator is a validator for the "health_status" field. It is called by the builders before save.
+	mcpupstream.HealthStatusValidator = func() func(string) error {
+		validators := mcpupstreamDescHealthStatus.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(health_status string) error {
+			for _, fn := range fns {
+				if err := fn(health_status); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mcpupstreamDescSyncStatus is the schema descriptor for sync_status field.
+	mcpupstreamDescSyncStatus := mcpupstreamFields[11].Descriptor()
+	// mcpupstream.DefaultSyncStatus holds the default value on creation for the sync_status field.
+	mcpupstream.DefaultSyncStatus = mcpupstreamDescSyncStatus.Default.(string)
+	// mcpupstream.SyncStatusValidator is a validator for the "sync_status" field. It is called by the builders before save.
+	mcpupstream.SyncStatusValidator = func() func(string) error {
+		validators := mcpupstreamDescSyncStatus.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(sync_status string) error {
+			for _, fn := range fns {
+				if err := fn(sync_status); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mcpupstreamDescCreatedAt is the schema descriptor for created_at field.
+	mcpupstreamDescCreatedAt := mcpupstreamFields[14].Descriptor()
+	// mcpupstream.DefaultCreatedAt holds the default value on creation for the created_at field.
+	mcpupstream.DefaultCreatedAt = mcpupstreamDescCreatedAt.Default.(func() time.Time)
+	// mcpupstreamDescUpdatedAt is the schema descriptor for updated_at field.
+	mcpupstreamDescUpdatedAt := mcpupstreamFields[15].Descriptor()
+	// mcpupstream.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	mcpupstream.DefaultUpdatedAt = mcpupstreamDescUpdatedAt.Default.(func() time.Time)
+	// mcpupstream.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	mcpupstream.UpdateDefaultUpdatedAt = mcpupstreamDescUpdatedAt.UpdateDefault.(func() time.Time)
+	mcpusertoolsettingFields := schema.MCPUserToolSetting{}.Fields()
+	_ = mcpusertoolsettingFields
+	// mcpusertoolsettingDescEnabled is the schema descriptor for enabled field.
+	mcpusertoolsettingDescEnabled := mcpusertoolsettingFields[3].Descriptor()
+	// mcpusertoolsetting.DefaultEnabled holds the default value on creation for the enabled field.
+	mcpusertoolsetting.DefaultEnabled = mcpusertoolsettingDescEnabled.Default.(bool)
+	// mcpusertoolsettingDescCreatedAt is the schema descriptor for created_at field.
+	mcpusertoolsettingDescCreatedAt := mcpusertoolsettingFields[4].Descriptor()
+	// mcpusertoolsetting.DefaultCreatedAt holds the default value on creation for the created_at field.
+	mcpusertoolsetting.DefaultCreatedAt = mcpusertoolsettingDescCreatedAt.Default.(func() time.Time)
+	// mcpusertoolsettingDescUpdatedAt is the schema descriptor for updated_at field.
+	mcpusertoolsettingDescUpdatedAt := mcpusertoolsettingFields[5].Descriptor()
+	// mcpusertoolsetting.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	mcpusertoolsetting.DefaultUpdatedAt = mcpusertoolsettingDescUpdatedAt.Default.(func() time.Time)
+	// mcpusertoolsetting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	mcpusertoolsetting.UpdateDefaultUpdatedAt = mcpusertoolsettingDescUpdatedAt.UpdateDefault.(func() time.Time)
 	modelMixin := schema.Model{}.Mixin()
 	modelMixinHooks0 := modelMixin[0].Hooks()
 	model.Hooks[0] = modelMixinHooks0[0]
@@ -172,12 +389,32 @@ func init() {
 	modelDescWeight := modelFields[9].Descriptor()
 	// model.DefaultWeight holds the default value on creation for the weight field.
 	model.DefaultWeight = modelDescWeight.Default.(int)
+	// modelDescThinkingEnabled is the schema descriptor for thinking_enabled field.
+	modelDescThinkingEnabled := modelFields[10].Descriptor()
+	// model.DefaultThinkingEnabled holds the default value on creation for the thinking_enabled field.
+	model.DefaultThinkingEnabled = modelDescThinkingEnabled.Default.(bool)
+	// modelDescSupportImage is the schema descriptor for support_image field.
+	modelDescSupportImage := modelFields[11].Descriptor()
+	// model.DefaultSupportImage holds the default value on creation for the support_image field.
+	model.DefaultSupportImage = modelDescSupportImage.Default.(bool)
+	// modelDescIsHidden is the schema descriptor for is_hidden field.
+	modelDescIsHidden := modelFields[12].Descriptor()
+	// model.DefaultIsHidden holds the default value on creation for the is_hidden field.
+	model.DefaultIsHidden = modelDescIsHidden.Default.(bool)
+	// modelDescContextLimit is the schema descriptor for context_limit field.
+	modelDescContextLimit := modelFields[13].Descriptor()
+	// model.DefaultContextLimit holds the default value on creation for the context_limit field.
+	model.DefaultContextLimit = modelDescContextLimit.Default.(int)
+	// modelDescOutputLimit is the schema descriptor for output_limit field.
+	modelDescOutputLimit := modelFields[14].Descriptor()
+	// model.DefaultOutputLimit holds the default value on creation for the output_limit field.
+	model.DefaultOutputLimit = modelDescOutputLimit.Default.(int)
 	// modelDescCreatedAt is the schema descriptor for created_at field.
-	modelDescCreatedAt := modelFields[13].Descriptor()
+	modelDescCreatedAt := modelFields[18].Descriptor()
 	// model.DefaultCreatedAt holds the default value on creation for the created_at field.
 	model.DefaultCreatedAt = modelDescCreatedAt.Default.(func() time.Time)
 	// modelDescUpdatedAt is the schema descriptor for updated_at field.
-	modelDescUpdatedAt := modelFields[14].Descriptor()
+	modelDescUpdatedAt := modelFields[19].Descriptor()
 	// model.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	model.DefaultUpdatedAt = modelDescUpdatedAt.Default.(func() time.Time)
 	// model.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -254,24 +491,24 @@ func init() {
 			return nil
 		}
 	}()
-	// notifychannelDescWebhookURL is the schema descriptor for webhook_url field.
-	notifychannelDescWebhookURL := notifychannelFields[5].Descriptor()
-	// notifychannel.WebhookURLValidator is a validator for the "webhook_url" field. It is called by the builders before save.
-	notifychannel.WebhookURLValidator = notifychannelDescWebhookURL.Validators[0].(func(string) error)
 	// notifychannelDescSecret is the schema descriptor for secret field.
 	notifychannelDescSecret := notifychannelFields[6].Descriptor()
 	// notifychannel.DefaultSecret holds the default value on creation for the secret field.
 	notifychannel.DefaultSecret = notifychannelDescSecret.Default.(string)
+	// notifychannelDescTargetID is the schema descriptor for target_id field.
+	notifychannelDescTargetID := notifychannelFields[9].Descriptor()
+	// notifychannel.DefaultTargetID holds the default value on creation for the target_id field.
+	notifychannel.DefaultTargetID = notifychannelDescTargetID.Default.(string)
 	// notifychannelDescEnabled is the schema descriptor for enabled field.
-	notifychannelDescEnabled := notifychannelFields[8].Descriptor()
+	notifychannelDescEnabled := notifychannelFields[10].Descriptor()
 	// notifychannel.DefaultEnabled holds the default value on creation for the enabled field.
 	notifychannel.DefaultEnabled = notifychannelDescEnabled.Default.(bool)
 	// notifychannelDescCreatedAt is the schema descriptor for created_at field.
-	notifychannelDescCreatedAt := notifychannelFields[9].Descriptor()
+	notifychannelDescCreatedAt := notifychannelFields[11].Descriptor()
 	// notifychannel.DefaultCreatedAt holds the default value on creation for the created_at field.
 	notifychannel.DefaultCreatedAt = notifychannelDescCreatedAt.Default.(func() time.Time)
 	// notifychannelDescUpdatedAt is the schema descriptor for updated_at field.
-	notifychannelDescUpdatedAt := notifychannelFields[10].Descriptor()
+	notifychannelDescUpdatedAt := notifychannelFields[12].Descriptor()
 	// notifychannel.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	notifychannel.DefaultUpdatedAt = notifychannelDescUpdatedAt.Default.(func() time.Time)
 	// notifychannel.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -431,15 +668,51 @@ func init() {
 	// task.ContentValidator is a validator for the "content" field. It is called by the builders before save.
 	task.ContentValidator = taskDescContent.Validators[0].(func(string) error)
 	// taskDescCreatedAt is the schema descriptor for created_at field.
-	taskDescCreatedAt := taskFields[7].Descriptor()
+	taskDescCreatedAt := taskFields[9].Descriptor()
 	// task.DefaultCreatedAt holds the default value on creation for the created_at field.
 	task.DefaultCreatedAt = taskDescCreatedAt.Default.(func() time.Time)
+	// taskDescLastActiveAt is the schema descriptor for last_active_at field.
+	taskDescLastActiveAt := taskFields[10].Descriptor()
+	// task.DefaultLastActiveAt holds the default value on creation for the last_active_at field.
+	task.DefaultLastActiveAt = taskDescLastActiveAt.Default.(func() time.Time)
 	// taskDescUpdatedAt is the schema descriptor for updated_at field.
-	taskDescUpdatedAt := taskFields[8].Descriptor()
+	taskDescUpdatedAt := taskFields[11].Descriptor()
 	// task.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	task.DefaultUpdatedAt = taskDescUpdatedAt.Default.(func() time.Time)
 	// task.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	task.UpdateDefaultUpdatedAt = taskDescUpdatedAt.UpdateDefault.(func() time.Time)
+	taskmodelswitchFields := schema.TaskModelSwitch{}.Fields()
+	_ = taskmodelswitchFields
+	// taskmodelswitchDescRequestID is the schema descriptor for request_id field.
+	taskmodelswitchDescRequestID := taskmodelswitchFields[5].Descriptor()
+	// taskmodelswitch.DefaultRequestID holds the default value on creation for the request_id field.
+	taskmodelswitch.DefaultRequestID = taskmodelswitchDescRequestID.Default.(string)
+	// taskmodelswitchDescLoadSession is the schema descriptor for load_session field.
+	taskmodelswitchDescLoadSession := taskmodelswitchFields[6].Descriptor()
+	// taskmodelswitch.DefaultLoadSession holds the default value on creation for the load_session field.
+	taskmodelswitch.DefaultLoadSession = taskmodelswitchDescLoadSession.Default.(bool)
+	// taskmodelswitchDescMessage is the schema descriptor for message field.
+	taskmodelswitchDescMessage := taskmodelswitchFields[8].Descriptor()
+	// taskmodelswitch.DefaultMessage holds the default value on creation for the message field.
+	taskmodelswitch.DefaultMessage = taskmodelswitchDescMessage.Default.(string)
+	// taskmodelswitchDescSessionID is the schema descriptor for session_id field.
+	taskmodelswitchDescSessionID := taskmodelswitchFields[9].Descriptor()
+	// taskmodelswitch.DefaultSessionID holds the default value on creation for the session_id field.
+	taskmodelswitch.DefaultSessionID = taskmodelswitchDescSessionID.Default.(string)
+	// taskmodelswitchDescCreatedAt is the schema descriptor for created_at field.
+	taskmodelswitchDescCreatedAt := taskmodelswitchFields[10].Descriptor()
+	// taskmodelswitch.DefaultCreatedAt holds the default value on creation for the created_at field.
+	taskmodelswitch.DefaultCreatedAt = taskmodelswitchDescCreatedAt.Default.(func() time.Time)
+	// taskmodelswitchDescUpdatedAt is the schema descriptor for updated_at field.
+	taskmodelswitchDescUpdatedAt := taskmodelswitchFields[11].Descriptor()
+	// taskmodelswitch.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	taskmodelswitch.DefaultUpdatedAt = taskmodelswitchDescUpdatedAt.Default.(func() time.Time)
+	// taskmodelswitch.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	taskmodelswitch.UpdateDefaultUpdatedAt = taskmodelswitchDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// taskmodelswitchDescID is the schema descriptor for id field.
+	taskmodelswitchDescID := taskmodelswitchFields[0].Descriptor()
+	// taskmodelswitch.DefaultID holds the default value on creation for the id field.
+	taskmodelswitch.DefaultID = taskmodelswitchDescID.Default.(func() uuid.UUID)
 	taskusagestatFields := schema.TaskUsageStat{}.Fields()
 	_ = taskusagestatFields
 	// taskusagestatDescModel is the schema descriptor for model field.

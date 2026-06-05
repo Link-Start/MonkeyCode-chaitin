@@ -152,6 +152,35 @@ var (
 			},
 		},
 	}
+	// GitTasksColumns holds the columns for the "git_tasks" table.
+	GitTasksColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "repo_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "subject_type", Type: field.TypeString},
+		{Name: "subject_id", Type: field.TypeString, Nullable: true},
+		{Name: "subject_number", Type: field.TypeInt, Nullable: true},
+		{Name: "subject_url", Type: field.TypeString, Nullable: true},
+		{Name: "subject_title", Type: field.TypeString, Nullable: true},
+		{Name: "prompt_id", Type: field.TypeString, Nullable: true},
+		{Name: "show_url", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "github_installation_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "task_id", Type: field.TypeUUID, Unique: true},
+	}
+	// GitTasksTable holds the schema information for the "git_tasks" table.
+	GitTasksTable = &schema.Table{
+		Name:       "git_tasks",
+		Columns:    GitTasksColumns,
+		PrimaryKey: []*schema.Column{GitTasksColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "git_tasks_tasks_git_tasks",
+				Columns:    []*schema.Column{GitTasksColumns[11]},
+				RefColumns: []*schema.Column{TasksColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+	}
 	// HostsColumns holds the columns for the "hosts" table.
 	HostsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
@@ -210,6 +239,111 @@ var (
 			},
 		},
 	}
+	// McpToolsColumns holds the columns for the "mcp_tools" table.
+	McpToolsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID, Unique: true},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "name", Type: field.TypeString, Size: 256},
+		{Name: "namespaced_name", Type: field.TypeString, Size: 320},
+		{Name: "scope", Type: field.TypeEnum, Enums: []string{"user", "platform"}},
+		{Name: "user_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "input_schema", Type: field.TypeJSON, Nullable: true},
+		{Name: "price", Type: field.TypeInt64, Default: 0},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "version_hash", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "synced_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "upstream_id", Type: field.TypeUUID},
+	}
+	// McpToolsTable holds the schema information for the "mcp_tools" table.
+	McpToolsTable = &schema.Table{
+		Name:       "mcp_tools",
+		Columns:    McpToolsColumns,
+		PrimaryKey: []*schema.Column{McpToolsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "mcp_tools_mcp_upstreams_tools",
+				Columns:    []*schema.Column{McpToolsColumns[14]},
+				RefColumns: []*schema.Column{McpUpstreamsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "mcptool_scope_user_id_namespaced_name",
+				Unique:  true,
+				Columns: []*schema.Column{McpToolsColumns[4], McpToolsColumns[5], McpToolsColumns[3]},
+			},
+		},
+	}
+	// McpUpstreamsColumns holds the columns for the "mcp_upstreams" table.
+	McpUpstreamsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID, Unique: true},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "name", Type: field.TypeString, Size: 128},
+		{Name: "slug", Type: field.TypeString, Size: 64},
+		{Name: "scope", Type: field.TypeEnum, Enums: []string{"user", "platform"}},
+		{Name: "type", Type: field.TypeString, Size: 16, Default: "server"},
+		{Name: "url", Type: field.TypeString, Size: 2147483647},
+		{Name: "headers", Type: field.TypeJSON, Nullable: true},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "health_status", Type: field.TypeString, Size: 16, Default: "unknown"},
+		{Name: "sync_status", Type: field.TypeString, Size: 16, Default: "pending"},
+		{Name: "health_checked_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_synced_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeUUID, Nullable: true},
+	}
+	// McpUpstreamsTable holds the schema information for the "mcp_upstreams" table.
+	McpUpstreamsTable = &schema.Table{
+		Name:       "mcp_upstreams",
+		Columns:    McpUpstreamsColumns,
+		PrimaryKey: []*schema.Column{McpUpstreamsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "mcp_upstreams_users_mcp_upstreams",
+				Columns:    []*schema.Column{McpUpstreamsColumns[16]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "mcpupstream_scope_user_id_slug",
+				Unique:  true,
+				Columns: []*schema.Column{McpUpstreamsColumns[4], McpUpstreamsColumns[16], McpUpstreamsColumns[3]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "deleted_at IS NULL",
+				},
+			},
+		},
+	}
+	// McpUserToolSettingsColumns holds the columns for the "mcp_user_tool_settings" table.
+	McpUserToolSettingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID, Unique: true},
+		{Name: "user_id", Type: field.TypeUUID},
+		{Name: "tool_id", Type: field.TypeUUID},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// McpUserToolSettingsTable holds the schema information for the "mcp_user_tool_settings" table.
+	McpUserToolSettingsTable = &schema.Table{
+		Name:       "mcp_user_tool_settings",
+		Columns:    McpUserToolSettingsColumns,
+		PrimaryKey: []*schema.Column{McpUserToolSettingsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "mcpusertoolsetting_user_id_tool_id",
+				Unique:  true,
+				Columns: []*schema.Column{McpUserToolSettingsColumns[1], McpUserToolSettingsColumns[2]},
+			},
+		},
+	}
 	// ModelsColumns holds the columns for the "models" table.
 	ModelsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUUID, Unique: true},
@@ -222,6 +356,11 @@ var (
 		{Name: "temperature", Type: field.TypeFloat64, Nullable: true},
 		{Name: "interface_type", Type: field.TypeString, Nullable: true},
 		{Name: "weight", Type: field.TypeInt, Default: 1},
+		{Name: "thinking_enabled", Type: field.TypeBool, Default: true},
+		{Name: "support_image", Type: field.TypeBool, Default: false},
+		{Name: "is_hidden", Type: field.TypeBool, Default: false},
+		{Name: "context_limit", Type: field.TypeInt, Default: 200000},
+		{Name: "output_limit", Type: field.TypeInt, Default: 32000},
 		{Name: "last_check_at", Type: field.TypeTime, Nullable: true},
 		{Name: "last_check_success", Type: field.TypeBool, Nullable: true},
 		{Name: "last_check_error", Type: field.TypeString, Nullable: true},
@@ -237,7 +376,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "models_users_models",
-				Columns:    []*schema.Column{ModelsColumns[15]},
+				Columns:    []*schema.Column{ModelsColumns[20]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -303,6 +442,8 @@ var (
 		{Name: "webhook_url", Type: field.TypeString, Size: 2147483647},
 		{Name: "secret", Type: field.TypeString, Nullable: true, Size: 2147483647, Default: ""},
 		{Name: "headers", Type: field.TypeJSON, Nullable: true},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "target_id", Type: field.TypeString, Default: ""},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
@@ -317,6 +458,22 @@ var (
 				Name:    "notifychannel_owner_id_owner_type",
 				Unique:  false,
 				Columns: []*schema.Column{NotifyChannelsColumns[2], NotifyChannelsColumns[3]},
+			},
+			{
+				Name:    "notifychannel_owner_id",
+				Unique:  true,
+				Columns: []*schema.Column{NotifyChannelsColumns[2]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "kind = 'wechat_mp' AND deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "notifychannel_kind_target_id",
+				Unique:  false,
+				Columns: []*schema.Column{NotifyChannelsColumns[5], NotifyChannelsColumns[10]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "deleted_at IS NULL",
+				},
 			},
 		},
 	}
@@ -632,9 +789,12 @@ var (
 		{Name: "kind", Type: field.TypeString},
 		{Name: "sub_type", Type: field.TypeString, Nullable: true},
 		{Name: "content", Type: field.TypeString, Size: 2147483647},
+		{Name: "title", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "summary", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "status", Type: field.TypeString},
+		{Name: "log_store", Type: field.TypeString, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
+		{Name: "last_active_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
 		{Name: "user_id", Type: field.TypeUUID},
@@ -647,9 +807,68 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "tasks_users_tasks",
-				Columns:    []*schema.Column{TasksColumns[10]},
+				Columns:    []*schema.Column{TasksColumns[13]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
+			},
+		},
+	}
+	// TaskModelSwitchesColumns holds the columns for the "task_model_switches" table.
+	TaskModelSwitchesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "request_id", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "load_session", Type: field.TypeBool, Default: true},
+		{Name: "success", Type: field.TypeBool, Nullable: true},
+		{Name: "message", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "session_id", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "from_model_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "to_model_id", Type: field.TypeUUID},
+		{Name: "task_id", Type: field.TypeUUID},
+		{Name: "user_id", Type: field.TypeUUID},
+	}
+	// TaskModelSwitchesTable holds the schema information for the "task_model_switches" table.
+	TaskModelSwitchesTable = &schema.Table{
+		Name:       "task_model_switches",
+		Columns:    TaskModelSwitchesColumns,
+		PrimaryKey: []*schema.Column{TaskModelSwitchesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "task_model_switches_models_switches_from",
+				Columns:    []*schema.Column{TaskModelSwitchesColumns[8]},
+				RefColumns: []*schema.Column{ModelsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "task_model_switches_models_switches_to",
+				Columns:    []*schema.Column{TaskModelSwitchesColumns[9]},
+				RefColumns: []*schema.Column{ModelsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "task_model_switches_tasks_model_switches",
+				Columns:    []*schema.Column{TaskModelSwitchesColumns[10]},
+				RefColumns: []*schema.Column{TasksColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "task_model_switches_users_task_model_switches",
+				Columns:    []*schema.Column{TaskModelSwitchesColumns[11]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_task_model_switches_task_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TaskModelSwitchesColumns[10], TaskModelSwitchesColumns[6]},
+			},
+			{
+				Name:    "idx_task_model_switches_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TaskModelSwitchesColumns[11], TaskModelSwitchesColumns[6]},
 			},
 		},
 	}
@@ -1072,6 +1291,7 @@ var (
 	VirtualmachinesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "access_token", Type: field.TypeString, Unique: true, Nullable: true},
 		{Name: "environment_id", Type: field.TypeString, Nullable: true},
 		{Name: "name", Type: field.TypeString},
 		{Name: "hostname", Type: field.TypeString, Nullable: true},
@@ -1081,8 +1301,6 @@ var (
 		{Name: "os", Type: field.TypeString, Nullable: true},
 		{Name: "external_ip", Type: field.TypeString, Nullable: true},
 		{Name: "internal_ip", Type: field.TypeString, Nullable: true},
-		{Name: "ttl_kind", Type: field.TypeString, Nullable: true},
-		{Name: "ttl", Type: field.TypeInt64, Nullable: true},
 		{Name: "version", Type: field.TypeString, Nullable: true},
 		{Name: "machine_id", Type: field.TypeString, Nullable: true},
 		{Name: "repo_url", Type: field.TypeString, Nullable: true},
@@ -1090,6 +1308,7 @@ var (
 		{Name: "branch", Type: field.TypeString, Nullable: true},
 		{Name: "is_recycled", Type: field.TypeBool, Nullable: true},
 		{Name: "conditions", Type: field.TypeJSON, Nullable: true},
+		{Name: "expired_at", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "git_identity_id", Type: field.TypeUUID, Nullable: true},
@@ -1136,8 +1355,12 @@ var (
 		GitBotTasksTable,
 		GitBotUsersTable,
 		GitIdentitiesTable,
+		GitTasksTable,
 		HostsTable,
 		ImagesTable,
+		McpToolsTable,
+		McpUpstreamsTable,
+		McpUserToolSettingsTable,
 		ModelsTable,
 		ModelAPIKeysTable,
 		ModelPricingsTable,
@@ -1151,6 +1374,7 @@ var (
 		ProjectIssueCommentsTable,
 		ProjectTasksTable,
 		TasksTable,
+		TaskModelSwitchesTable,
 		TaskUsageStatsTable,
 		TaskVirtualmachinesTable,
 		TeamsTable,
@@ -1192,6 +1416,10 @@ func init() {
 	GitIdentitiesTable.Annotation = &entsql.Annotation{
 		Table: "git_identities",
 	}
+	GitTasksTable.ForeignKeys[0].RefTable = TasksTable
+	GitTasksTable.Annotation = &entsql.Annotation{
+		Table: "git_tasks",
+	}
 	HostsTable.ForeignKeys[0].RefTable = UsersTable
 	HostsTable.Annotation = &entsql.Annotation{
 		Table: "hosts",
@@ -1199,6 +1427,17 @@ func init() {
 	ImagesTable.ForeignKeys[0].RefTable = UsersTable
 	ImagesTable.Annotation = &entsql.Annotation{
 		Table: "images",
+	}
+	McpToolsTable.ForeignKeys[0].RefTable = McpUpstreamsTable
+	McpToolsTable.Annotation = &entsql.Annotation{
+		Table: "mcp_tools",
+	}
+	McpUpstreamsTable.ForeignKeys[0].RefTable = UsersTable
+	McpUpstreamsTable.Annotation = &entsql.Annotation{
+		Table: "mcp_upstreams",
+	}
+	McpUserToolSettingsTable.Annotation = &entsql.Annotation{
+		Table: "mcp_user_tool_settings",
 	}
 	ModelsTable.ForeignKeys[0].RefTable = UsersTable
 	ModelsTable.Annotation = &entsql.Annotation{
@@ -1262,6 +1501,13 @@ func init() {
 	TasksTable.ForeignKeys[0].RefTable = UsersTable
 	TasksTable.Annotation = &entsql.Annotation{
 		Table: "tasks",
+	}
+	TaskModelSwitchesTable.ForeignKeys[0].RefTable = ModelsTable
+	TaskModelSwitchesTable.ForeignKeys[1].RefTable = ModelsTable
+	TaskModelSwitchesTable.ForeignKeys[2].RefTable = TasksTable
+	TaskModelSwitchesTable.ForeignKeys[3].RefTable = UsersTable
+	TaskModelSwitchesTable.Annotation = &entsql.Annotation{
+		Table: "task_model_switches",
 	}
 	TaskUsageStatsTable.Annotation = &entsql.Annotation{
 		Table: "task_usage_stats",

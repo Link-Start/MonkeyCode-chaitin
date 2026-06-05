@@ -13,8 +13,12 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/gitbottask"
 	"github.com/chaitin/MonkeyCode/backend/db/gitbotuser"
 	"github.com/chaitin/MonkeyCode/backend/db/gitidentity"
+	"github.com/chaitin/MonkeyCode/backend/db/gittask"
 	"github.com/chaitin/MonkeyCode/backend/db/host"
 	"github.com/chaitin/MonkeyCode/backend/db/image"
+	"github.com/chaitin/MonkeyCode/backend/db/mcptool"
+	"github.com/chaitin/MonkeyCode/backend/db/mcpupstream"
+	"github.com/chaitin/MonkeyCode/backend/db/mcpusertoolsetting"
 	"github.com/chaitin/MonkeyCode/backend/db/model"
 	"github.com/chaitin/MonkeyCode/backend/db/modelapikey"
 	"github.com/chaitin/MonkeyCode/backend/db/modelpricing"
@@ -29,6 +33,7 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/projectissuecomment"
 	"github.com/chaitin/MonkeyCode/backend/db/projecttask"
 	"github.com/chaitin/MonkeyCode/backend/db/task"
+	"github.com/chaitin/MonkeyCode/backend/db/taskmodelswitch"
 	"github.com/chaitin/MonkeyCode/backend/db/taskusagestat"
 	"github.com/chaitin/MonkeyCode/backend/db/taskvirtualmachine"
 	"github.com/chaitin/MonkeyCode/backend/db/team"
@@ -237,6 +242,33 @@ func (f TraverseGitIdentity) Traverse(ctx context.Context, q db.Query) error {
 	return fmt.Errorf("unexpected query type %T. expect *db.GitIdentityQuery", q)
 }
 
+// The GitTaskFunc type is an adapter to allow the use of ordinary function as a Querier.
+type GitTaskFunc func(context.Context, *db.GitTaskQuery) (db.Value, error)
+
+// Query calls f(ctx, q).
+func (f GitTaskFunc) Query(ctx context.Context, q db.Query) (db.Value, error) {
+	if q, ok := q.(*db.GitTaskQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *db.GitTaskQuery", q)
+}
+
+// The TraverseGitTask type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseGitTask func(context.Context, *db.GitTaskQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseGitTask) Intercept(next db.Querier) db.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseGitTask) Traverse(ctx context.Context, q db.Query) error {
+	if q, ok := q.(*db.GitTaskQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *db.GitTaskQuery", q)
+}
+
 // The HostFunc type is an adapter to allow the use of ordinary function as a Querier.
 type HostFunc func(context.Context, *db.HostQuery) (db.Value, error)
 
@@ -289,6 +321,87 @@ func (f TraverseImage) Traverse(ctx context.Context, q db.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *db.ImageQuery", q)
+}
+
+// The MCPToolFunc type is an adapter to allow the use of ordinary function as a Querier.
+type MCPToolFunc func(context.Context, *db.MCPToolQuery) (db.Value, error)
+
+// Query calls f(ctx, q).
+func (f MCPToolFunc) Query(ctx context.Context, q db.Query) (db.Value, error) {
+	if q, ok := q.(*db.MCPToolQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *db.MCPToolQuery", q)
+}
+
+// The TraverseMCPTool type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseMCPTool func(context.Context, *db.MCPToolQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseMCPTool) Intercept(next db.Querier) db.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseMCPTool) Traverse(ctx context.Context, q db.Query) error {
+	if q, ok := q.(*db.MCPToolQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *db.MCPToolQuery", q)
+}
+
+// The MCPUpstreamFunc type is an adapter to allow the use of ordinary function as a Querier.
+type MCPUpstreamFunc func(context.Context, *db.MCPUpstreamQuery) (db.Value, error)
+
+// Query calls f(ctx, q).
+func (f MCPUpstreamFunc) Query(ctx context.Context, q db.Query) (db.Value, error) {
+	if q, ok := q.(*db.MCPUpstreamQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *db.MCPUpstreamQuery", q)
+}
+
+// The TraverseMCPUpstream type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseMCPUpstream func(context.Context, *db.MCPUpstreamQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseMCPUpstream) Intercept(next db.Querier) db.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseMCPUpstream) Traverse(ctx context.Context, q db.Query) error {
+	if q, ok := q.(*db.MCPUpstreamQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *db.MCPUpstreamQuery", q)
+}
+
+// The MCPUserToolSettingFunc type is an adapter to allow the use of ordinary function as a Querier.
+type MCPUserToolSettingFunc func(context.Context, *db.MCPUserToolSettingQuery) (db.Value, error)
+
+// Query calls f(ctx, q).
+func (f MCPUserToolSettingFunc) Query(ctx context.Context, q db.Query) (db.Value, error) {
+	if q, ok := q.(*db.MCPUserToolSettingQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *db.MCPUserToolSettingQuery", q)
+}
+
+// The TraverseMCPUserToolSetting type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseMCPUserToolSetting func(context.Context, *db.MCPUserToolSettingQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseMCPUserToolSetting) Intercept(next db.Querier) db.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseMCPUserToolSetting) Traverse(ctx context.Context, q db.Query) error {
+	if q, ok := q.(*db.MCPUserToolSettingQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *db.MCPUserToolSettingQuery", q)
 }
 
 // The ModelFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -640,6 +753,33 @@ func (f TraverseTask) Traverse(ctx context.Context, q db.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *db.TaskQuery", q)
+}
+
+// The TaskModelSwitchFunc type is an adapter to allow the use of ordinary function as a Querier.
+type TaskModelSwitchFunc func(context.Context, *db.TaskModelSwitchQuery) (db.Value, error)
+
+// Query calls f(ctx, q).
+func (f TaskModelSwitchFunc) Query(ctx context.Context, q db.Query) (db.Value, error) {
+	if q, ok := q.(*db.TaskModelSwitchQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *db.TaskModelSwitchQuery", q)
+}
+
+// The TraverseTaskModelSwitch type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseTaskModelSwitch func(context.Context, *db.TaskModelSwitchQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseTaskModelSwitch) Intercept(next db.Querier) db.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseTaskModelSwitch) Traverse(ctx context.Context, q db.Query) error {
+	if q, ok := q.(*db.TaskModelSwitchQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *db.TaskModelSwitchQuery", q)
 }
 
 // The TaskUsageStatFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1060,10 +1200,18 @@ func NewQuery(q db.Query) (Query, error) {
 		return &query[*db.GitBotUserQuery, predicate.GitBotUser, gitbotuser.OrderOption]{typ: db.TypeGitBotUser, tq: q}, nil
 	case *db.GitIdentityQuery:
 		return &query[*db.GitIdentityQuery, predicate.GitIdentity, gitidentity.OrderOption]{typ: db.TypeGitIdentity, tq: q}, nil
+	case *db.GitTaskQuery:
+		return &query[*db.GitTaskQuery, predicate.GitTask, gittask.OrderOption]{typ: db.TypeGitTask, tq: q}, nil
 	case *db.HostQuery:
 		return &query[*db.HostQuery, predicate.Host, host.OrderOption]{typ: db.TypeHost, tq: q}, nil
 	case *db.ImageQuery:
 		return &query[*db.ImageQuery, predicate.Image, image.OrderOption]{typ: db.TypeImage, tq: q}, nil
+	case *db.MCPToolQuery:
+		return &query[*db.MCPToolQuery, predicate.MCPTool, mcptool.OrderOption]{typ: db.TypeMCPTool, tq: q}, nil
+	case *db.MCPUpstreamQuery:
+		return &query[*db.MCPUpstreamQuery, predicate.MCPUpstream, mcpupstream.OrderOption]{typ: db.TypeMCPUpstream, tq: q}, nil
+	case *db.MCPUserToolSettingQuery:
+		return &query[*db.MCPUserToolSettingQuery, predicate.MCPUserToolSetting, mcpusertoolsetting.OrderOption]{typ: db.TypeMCPUserToolSetting, tq: q}, nil
 	case *db.ModelQuery:
 		return &query[*db.ModelQuery, predicate.Model, model.OrderOption]{typ: db.TypeModel, tq: q}, nil
 	case *db.ModelApiKeyQuery:
@@ -1090,6 +1238,8 @@ func NewQuery(q db.Query) (Query, error) {
 		return &query[*db.ProjectTaskQuery, predicate.ProjectTask, projecttask.OrderOption]{typ: db.TypeProjectTask, tq: q}, nil
 	case *db.TaskQuery:
 		return &query[*db.TaskQuery, predicate.Task, task.OrderOption]{typ: db.TypeTask, tq: q}, nil
+	case *db.TaskModelSwitchQuery:
+		return &query[*db.TaskModelSwitchQuery, predicate.TaskModelSwitch, taskmodelswitch.OrderOption]{typ: db.TypeTaskModelSwitch, tq: q}, nil
 	case *db.TaskUsageStatQuery:
 		return &query[*db.TaskUsageStatQuery, predicate.TaskUsageStat, taskusagestat.OrderOption]{typ: db.TypeTaskUsageStat, tq: q}, nil
 	case *db.TaskVirtualMachineQuery:

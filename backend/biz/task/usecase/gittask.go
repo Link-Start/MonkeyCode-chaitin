@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -55,7 +54,7 @@ func (g *GitTaskUsecase) Create(ctx context.Context, req domain.CreateGitTaskReq
 		req.Env = make(map[string]string)
 	}
 
-	tk, err := g.repo.Create(ctx, req, func(u *db.User, t *db.Task, m *db.Model, img *db.Image) (*taskflow.VirtualMachine, error) {
+	tk, err := g.repo.Create(ctx, req, func(u *db.User, t *db.Task, m *db.Model) (*taskflow.VirtualMachine, error) {
 		branch := "master"
 		if req.Repo.Branch != nil {
 			branch = *req.Repo.Branch
@@ -72,7 +71,7 @@ func (g *GitTaskUsecase) Create(ctx context.Context, req domain.CreateGitTaskReq
 				Branch:   branch,
 				Token:    req.Git.Token,
 			},
-			ImageURL: img.Name,
+			ImageURL: g.cfg.ReviewAgent.Image,
 			TaskID:   t.ID,
 			LLM: taskflow.LLMProviderReq{
 				Provider: taskflow.LlmProviderOpenAI,
@@ -80,8 +79,9 @@ func (g *GitTaskUsecase) Create(ctx context.Context, req domain.CreateGitTaskReq
 				BaseURL:  m.BaseURL,
 				Model:    m.Model,
 			},
-			Cores:  fmt.Sprintf("%d", g.cfg.Task.Core),
-			Memory: g.cfg.Task.Memory,
+			Cores:    fmt.Sprintf("%d", g.cfg.Task.Core),
+			Memory:   g.cfg.Task.Memory,
+			LogStore: normalizeTaskLogStore(t.LogStore),
 		})
 		if err != nil {
 			return nil, err
@@ -114,14 +114,15 @@ func (g *GitTaskUsecase) Create(ctx context.Context, req domain.CreateGitTaskReq
 				BaseURL: m.BaseURL,
 				Model:   m.Model,
 			},
-			Env: req.Env,
+			Env:      req.Env,
+			LogStore: normalizeTaskLogStore(t.LogStore),
 		}
 		b, err := json.Marshal(createTaskReq)
 		if err != nil {
 			return vm, err
 		}
 		reqKey := fmt.Sprintf("task:create_req:%s", t.ID.String())
-		if err := g.redis.Set(ctx, reqKey, string(b), 10*time.Minute).Err(); err != nil {
+		if err := g.redis.Set(ctx, reqKey, string(b), createReqTTL(g.cfg)).Err(); err != nil {
 			g.logger.WarnContext(ctx, "failed to store CreateTaskReq in Redis", "error", err)
 		}
 

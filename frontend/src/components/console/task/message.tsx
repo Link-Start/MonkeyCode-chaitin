@@ -9,6 +9,8 @@ import { UserInputMessageItem } from "./message-userinput"
 import { SystemMessageItem } from "./message-system"
 import type { ConstsCliName } from "@/api/Api"
 import { RestartSessionMessageItem } from "./message-restart-session"
+import { AlertMessageItem } from "./message-alert"
+import type { TaskUserInput, TaskUserInputAttachment } from "./task-shared"
 
 const normalizeTimestampToSeconds = (timestamp: number) => {
   if (!Number.isFinite(timestamp)) return timestamp
@@ -22,12 +24,14 @@ interface MessageType {
   id: string
   time: number
   role: 'agent' | 'user' | 'system'
-  type: 'agent_message_chunk' | 'agent_thought_chunk' | 'user_input' | 'user_cancel' | 'tool_call' | 'tool_call_update' | 'available_commands_update' | 'plan' | 'error_message' | 'ask_user_question' | 'system_message' | 'restart_session'
+  type: 'agent_message_chunk' | 'agent_thought_chunk' | 'user_input' | 'user_cancel' | 'tool_call' | 'tool_call_update' | 'available_commands_update' | 'plan' | 'error_message' | 'alert_message' | 'ask_user_question' | 'system_message' | 'restart_session'
   data: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     _meta?: any
     requestId?: string
     details?: string
+    text?: string
+    level?: 'info' | 'warning'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     content?: any
     kind?: string
@@ -44,6 +48,7 @@ interface MessageType {
       priority: string
       status: string
     }[]
+    attachments?: TaskUserInputAttachment[]
     askId?: string
     questions?: {
       custom: boolean
@@ -59,8 +64,8 @@ interface MessageType {
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onResponseAskUserQuestion?: (askId: string, answers: any) => "sent" | "queued" | "rejected"
-  onReloadSession?: () => void
-  onUserInput?: (content: string) => void
+  onReloadSession?: () => Promise<boolean> | boolean
+  onUserInput?: (content: TaskUserInput) => Promise<boolean> | boolean
 }
 
 const MessageItem = ({ message, cli, isLatest = false }: { message: MessageType, cli?: ConstsCliName, isLatest?: boolean }) => {
@@ -76,6 +81,8 @@ const MessageItem = ({ message, cli, isLatest = false }: { message: MessageType,
         return <ToolCallMessageItem message={message} cli={cli} />
       case 'error_message':
         return <ErrorMessageItem message={message} />
+      case 'alert_message':
+        return <AlertMessageItem message={message} />
       case 'ask_user_question':
         return <AskUserQuestionMessageItem message={message} onResponse={message.onResponseAskUserQuestion} />
       case 'system_message':
@@ -97,7 +104,7 @@ const MessageItem = ({ message, cli, isLatest = false }: { message: MessageType,
   }
 
   return (
-    <div className="flex flex-col w-full group">
+    <div className="flex flex-col w-full group" data-message-id={message.id} data-message-type={message.type}>
       {message.role !== 'system' && <div className={cn("text-[10px] text-transparent group-hover:text-muted-foreground transition-colors px-1", message.role === 'user' ? 'text-right' : 'text-left')}>
         {dayjs.unix(normalizeTimestampToSeconds(message.time)).format('MM-DD HH:mm:ss')}
       </div>}

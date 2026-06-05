@@ -924,6 +924,29 @@ func HasTasksWith(preds ...predicate.Task) predicate.User {
 	})
 }
 
+// HasTaskModelSwitches applies the HasEdge predicate on the "task_model_switches" edge.
+func HasTaskModelSwitches() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, TaskModelSwitchesTable, TaskModelSwitchesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasTaskModelSwitchesWith applies the HasEdge predicate on the "task_model_switches" edge with a given conditions (other predicates).
+func HasTaskModelSwitchesWith(preds ...predicate.TaskModelSwitch) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newTaskModelSwitchesStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasGitIdentities applies the HasEdge predicate on the "git_identities" edge.
 func HasGitIdentities() predicate.User {
 	return predicate.User(func(s *sql.Selector) {
@@ -1077,6 +1100,29 @@ func HasGitBots() predicate.User {
 func HasGitBotsWith(preds ...predicate.GitBot) predicate.User {
 	return predicate.User(func(s *sql.Selector) {
 		step := newGitBotsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasMcpUpstreams applies the HasEdge predicate on the "mcp_upstreams" edge.
+func HasMcpUpstreams() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, McpUpstreamsTable, McpUpstreamsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasMcpUpstreamsWith applies the HasEdge predicate on the "mcp_upstreams" edge with a given conditions (other predicates).
+func HasMcpUpstreamsWith(preds ...predicate.MCPUpstream) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newMcpUpstreamsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

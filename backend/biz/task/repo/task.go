@@ -107,6 +107,7 @@ func (t *TaskRepo) StatByIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUI
 // GetByID implements domain.TaskRepo.
 func (t *TaskRepo) GetByID(ctx context.Context, id uuid.UUID) (*db.Task, error) {
 	return t.db.Task.Query().
+		WithUser().
 		WithProjectTasks(func(ptq *db.ProjectTaskQuery) {
 			ptq.
 				WithModel().
@@ -126,12 +127,28 @@ func (t *TaskRepo) GetByID(ctx context.Context, id uuid.UUID) (*db.Task, error) 
 		First(ctx)
 }
 
+func (t *TaskRepo) GetLogStore(ctx context.Context, id uuid.UUID) (consts.LogStore, error) {
+	var rows []struct {
+		LogStore *string `json:"log_store"`
+	}
+	if err := t.db.Task.Query().
+		Where(task.ID(id)).
+		Select(task.FieldLogStore).
+		Scan(ctx, &rows); err != nil {
+		return "", err
+	}
+	if len(rows) == 0 || rows[0].LogStore == nil {
+		return "", nil
+	}
+	return consts.LogStore(*rows[0].LogStore), nil
+}
+
 // Info implements domain.TaskRepo.
 func (t *TaskRepo) Info(ctx context.Context, u *domain.User, id uuid.UUID, isPrivileged bool) (*db.Task, error) {
 	q := t.db.Task.Query().
 		WithProjectTasks(func(ptq *db.ProjectTaskQuery) {
 			ptq.
-				WithModel().
+				WithModel(func(mq *db.ModelQuery) { mq.WithUser() }).
 				WithImage().
 				WithTask(func(tq *db.TaskQuery) {
 					tq.WithVms(func(vmq *db.VirtualMachineQuery) {
@@ -260,6 +277,15 @@ func (t *TaskRepo) Update(ctx context.Context, _ *domain.User, id uuid.UUID, fn 
 	})
 }
 
+func (t *TaskRepo) RefreshLastActiveAt(ctx context.Context, id uuid.UUID, at time.Time, minInterval time.Duration) error {
+	up := t.db.Task.Update().Where(task.ID(id))
+	if minInterval > 0 {
+		up = up.Where(task.LastActiveAtLT(at.Add(-minInterval)))
+	}
+	_, err := up.SetLastActiveAt(at).Save(ctx)
+	return err
+}
+
 // Delete implements domain.TaskRepo.
 func (t *TaskRepo) Delete(ctx context.Context, user *domain.User, id uuid.UUID) error {
 	_, err := t.db.Task.Delete().
@@ -267,6 +293,68 @@ func (t *TaskRepo) Delete(ctx context.Context, user *domain.User, id uuid.UUID) 
 		Where(task.ID(id)).
 		Exec(ctx)
 	return err
+}
+
+// UpdateProjectTaskModel 更新项目任务当前模型
+func (t *TaskRepo) UpdateProjectTaskModel(ctx context.Context, taskID, modelID uuid.UUID) error {
+	count, err := t.db.ProjectTask.Update().
+		Where(projecttask.TaskID(taskID)).
+		SetModelID(modelID).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return fmt.Errorf("updated project task count = %d, want 1", count)
+	}
+	return nil
+}
+
+// CreateModelSwitch 创建任务模型切换记录
+func (t *TaskRepo) CreateModelSwitch(ctx context.Context, item *domain.TaskModelSwitch) error {
+	create := t.db.TaskModelSwitch.Create().
+		SetID(item.ID).
+		SetTaskID(item.TaskID).
+		SetUserID(item.UserID).
+		SetToModelID(item.ToModelID).
+		SetRequestID(item.RequestID).
+		SetLoadSession(item.LoadSession)
+	if item.FromModelID != nil {
+		create.SetFromModelID(*item.FromModelID)
+	}
+	return create.Exec(ctx)
+}
+
+// FinishModelSwitch 完成任务模型切换记录
+func (t *TaskRepo) FinishModelSwitch(ctx context.Context, id uuid.UUID, success bool, message, sessionID string) error {
+	return t.db.TaskModelSwitch.UpdateOneID(id).
+		SetSuccess(success).
+		SetMessage(message).
+		SetSessionID(sessionID).
+		Exec(ctx)
+}
+
+func (t *TaskRepo) CompleteModelSwitch(ctx context.Context, id, taskID, modelID uuid.UUID, success bool, message, sessionID string) error {
+	return entx.WithTx2(ctx, t.db, func(tx *db.Tx) error {
+		if success {
+			count, err := tx.ProjectTask.Update().
+				Where(projecttask.TaskID(taskID)).
+				SetModelID(modelID).
+				Save(ctx)
+			if err != nil {
+				return err
+			}
+			if count != 1 {
+				return fmt.Errorf("updated project task count = %d, want 1", count)
+			}
+		}
+
+		return tx.TaskModelSwitch.UpdateOneID(id).
+			SetSuccess(success).
+			SetMessage(message).
+			SetSessionID(sessionID).
+			Exec(ctx)
+	})
 }
 
 // Create implements domain.TaskRepo.
@@ -284,17 +372,7 @@ func (t *TaskRepo) Create(ctx context.Context, u *domain.User, req domain.Create
 			cnt, err := tx.VirtualMachine.Query().
 				Where(virtualmachine.UserID(u.ID)).
 				Where(virtualmachine.HasHostWith(host.HasUserWith(user.Role(consts.UserRoleAdmin)))).
-				Where(func(s *sql.Selector) {
-					s.Where(sql.P(func(b *sql.Builder) {
-						b.WriteString("NOW()").
-							WriteOp(sql.OpLT).
-							Ident(s.C(virtualmachine.FieldCreatedAt)).
-							WriteOp(sql.OpAdd).
-							WriteString("make_interval(secs => ").
-							Ident(s.C(virtualmachine.FieldTTL)).
-							WriteByte(')')
-					}))
-				}).
+				Where(virtualmachine.ExpiredAtGT(time.Now())).
 				Count(ctx)
 			if err != nil {
 				return errcode.ErrDatabaseOperation.Wrap(err)
@@ -317,19 +395,17 @@ func (t *TaskRepo) Create(ctx context.Context, u *domain.User, req domain.Create
 			return err
 		}
 
-		var mak *db.ModelApiKey
-		if p := m.Edges.Pricing; p != nil {
-			apikey := uuid.NewString()
-			mak, err = tx.ModelApiKey.Create().
-				SetAPIKey(apikey).
-				SetUserID(u.ID).
-				SetModelID(m.ID).
-				Save(ctx)
-			if err != nil {
-				return err
-			}
-			m.Edges.Apikeys = append(m.Edges.Apikeys, mak)
+		apikey := uuid.NewString()
+		mak, err := tx.ModelApiKey.Create().
+			SetID(uuid.New()).
+			SetAPIKey(apikey).
+			SetUserID(u.ID).
+			SetModelID(m.ID).
+			Save(ctx)
+		if err != nil {
+			return err
 		}
+		m.Edges.Apikeys = append(m.Edges.Apikeys, mak)
 
 		img, err := tx.Image.Query().Where(image.ID(req.ImageID)).First(ctx)
 		if err != nil {
@@ -344,6 +420,7 @@ func (t *TaskRepo) Create(ctx context.Context, u *domain.User, req domain.Create
 			SetContent(req.Content).
 			SetUserID(u.ID).
 			SetStatus(consts.TaskStatusPending).
+			SetLogStore(consts.LogStoreClickHouse).
 			Save(ctx)
 		if err != nil {
 			return err
@@ -354,6 +431,7 @@ func (t *TaskRepo) Create(ctx context.Context, u *domain.User, req domain.Create
 		}
 
 		crt := tx.ProjectTask.Create().
+			SetID(uuid.New()).
 			SetImageID(img.ID).
 			SetModelID(m.ID).
 			SetTaskID(tk.ID).
@@ -388,38 +466,38 @@ func (t *TaskRepo) Create(ctx context.Context, u *domain.User, req domain.Create
 			return fmt.Errorf("created virtual machine is nil")
 		}
 
-		if err := tx.VirtualMachine.Create().
+		vmCrt := tx.VirtualMachine.Create().
 			SetID(vm.ID).
 			SetUserID(u.ID).
 			SetName(fmt.Sprintf("task-%s", id.String())).
 			SetHostID(h.ID).
 			SetEnvironmentID(vm.EnvironmentID).
-			SetTTLKind(consts.Forever).
-			SetTTL(0).
 			SetCores(resource.Core).
 			SetMemory(int64(resource.Memory)).
 			SetModelID(m.ID).
 			SetCreatedAt(req.Now).
 			SetRepoURL(req.RepoReq.RepoURL).
 			SetRepoFilename(req.RepoReq.RepoFilename).
-			SetBranch(req.RepoReq.Branch).
-			Exec(ctx); err != nil {
+			SetBranch(req.RepoReq.Branch)
+		if vm.AccessToken != "" {
+			vmCrt.SetAccessToken(vm.AccessToken)
+		}
+		if err := vmCrt.Exec(ctx); err != nil {
 			return fmt.Errorf("failed to create virtual machine %s", err)
 		}
 
 		tvm := tx.TaskVirtualMachine.Create().
+			SetID(uuid.New()).
 			SetTaskID(tk.ID).
 			SetVirtualmachineID(vm.ID)
 		if err := tvm.Exec(ctx); err != nil {
 			return err
 		}
 
-		if mak != nil {
-			if err := tx.ModelApiKey.UpdateOneID(mak.ID).
-				SetVirtualmachineID(vm.ID).
-				Exec(ctx); err != nil {
-				return err
-			}
+		if err := tx.ModelApiKey.UpdateOneID(mak.ID).
+			SetVirtualmachineID(vm.ID).
+			Exec(ctx); err != nil {
+			return err
 		}
 
 		return nil

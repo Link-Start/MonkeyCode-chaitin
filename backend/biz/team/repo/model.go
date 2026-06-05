@@ -64,6 +64,7 @@ func (r *teamModelRepo) Get(ctx context.Context, teamID, modelID uuid.UUID) (*db
 func (r *teamModelRepo) Create(ctx context.Context, teamID uuid.UUID, userID uuid.UUID, req *domain.AddTeamModelReq) (*db.Model, error) {
 	var res *db.Model
 	err := entx.WithTx2(ctx, r.db, func(tx *db.Tx) error {
+		useDefaultGroup := len(req.GroupIDs) == 0
 		tgs, err := tx.TeamGroup.Query().
 			Where(teamgroup.TeamID(teamID)).
 			Where(teamgroup.IDIn(req.GroupIDs...)).
@@ -74,21 +75,34 @@ func (r *teamModelRepo) Create(ctx context.Context, teamID uuid.UUID, userID uui
 		req.GroupIDs = cvt.Iter(tgs, func(_ int, tg *db.TeamGroup) uuid.UUID {
 			return tg.ID
 		})
+		if useDefaultGroup {
+			req.GroupIDs, err = ensureDefaultGroupIDs(ctx, tx, teamID, req.GroupIDs)
+			if err != nil {
+				return err
+			}
+		}
 
-		newModel, err := tx.Model.Create().
+		create := tx.Model.Create().
+			SetID(uuid.New()).
 			SetProvider(req.Provider).
 			SetAPIKey(req.APIKey).
 			SetBaseURL(req.BaseURL).
 			SetModel(req.Model).
+			SetRemark(req.Remark).
 			SetUserID(userID).
 			SetTemperature(req.Temperature).
-			SetInterfaceType(string(req.InterfaceType)).
-			Save(ctx)
+			SetInterfaceType(string(req.InterfaceType))
+		if req.SupportImage != nil {
+			create.SetSupportImage(*req.SupportImage)
+		}
+
+		newModel, err := create.Save(ctx)
 		if err != nil {
 			return err
 		}
 
 		if err := tx.TeamModel.Create().
+			SetID(uuid.New()).
 			SetTeamID(teamID).
 			SetModelID(newModel.ID).
 			Exec(ctx); err != nil {
@@ -98,6 +112,7 @@ func (r *teamModelRepo) Create(ctx context.Context, teamID uuid.UUID, userID uui
 		builders := make([]*db.TeamGroupModelCreate, 0)
 		for _, gid := range req.GroupIDs {
 			builders = append(builders, tx.TeamGroupModel.Create().
+				SetID(uuid.New()).
 				SetGroupID(gid).
 				SetModelID(newModel.ID))
 		}
@@ -140,11 +155,17 @@ func (r *teamModelRepo) Update(ctx context.Context, teamID uuid.UUID, req *domai
 		if req.Model != "" {
 			upt.SetModel(req.Model)
 		}
+		if req.Remark != nil {
+			upt.SetRemark(*req.Remark)
+		}
 		if req.Temperature != 0 {
 			upt.SetTemperature(req.Temperature)
 		}
 		if req.InterfaceType != "" {
 			upt.SetInterfaceType(string(req.InterfaceType))
+		}
+		if req.SupportImage != nil {
+			upt.SetSupportImage(*req.SupportImage)
 		}
 		err := upt.Exec(ctx)
 		if err != nil {

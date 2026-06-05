@@ -21,6 +21,25 @@ const isWebglSupported = (): boolean => {
   }
 };
 
+const buildWebSocketUrl = (rawUrl: string): string => {
+  if (!rawUrl) {
+    return rawUrl;
+  }
+
+  if (rawUrl.startsWith('ws://') || rawUrl.startsWith('wss://')) {
+    return rawUrl;
+  }
+
+  if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+    const normalized = new URL(rawUrl);
+    normalized.protocol = normalized.protocol === 'https:' ? 'wss:' : 'ws:';
+    return normalized.toString();
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}${rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`}`;
+};
+
 interface TerminalProps {
   ws: string
   theme: string
@@ -114,7 +133,10 @@ export default function Terminal({
 
   React.useEffect(() => {
     if (xtermInstance.current) {
-       xtermInstance.current.options.theme = { ...themes[validTheme as keyof typeof themes] };
+      xtermInstance.current.options.theme = { ...themes[validTheme as keyof typeof themes] };
+      if (xtermInstance.current.rows > 0) {
+        xtermInstance.current.refresh(0, xtermInstance.current.rows - 1);
+      }
       xtermInstance.current.focus();
     }
   }, [validTheme])
@@ -145,7 +167,7 @@ export default function Terminal({
     xtermInstance.current = new XTerm({
       allowProposedApi: true,
       theme: themes[validTheme as keyof typeof themes],
-      fontFamily: '"Geist Mono Variable", "Geist Mono", "SFMono-Regular", "Consolas", "Liberation Mono", monospace',
+      fontFamily: '"JetBrains Mono Variable", monospace',
       fontSize: 12,
     });
     
@@ -183,7 +205,7 @@ export default function Terminal({
   const connectWebSocket = () => {
     setConnecting(true);
     
-    websocketInstance.current = new WebSocket(ws);
+    websocketInstance.current = new WebSocket(buildWebSocketUrl(ws));
     
     websocketInstance.current.onopen = () => {
       pingLooper.current = window.setInterval(() => {
@@ -200,7 +222,7 @@ export default function Terminal({
         xtermInstance.current?.write(decodedData);
       } else if (data.type === 'connected') {
         const connectData = JSON.parse(data.data);
-        onUserNameChanged?.(connectData.username, connectData.avatar_url || "/logo-colored.png");
+        onUserNameChanged?.(connectData.username, connectData.avatar_url || "/logo-light.png");
         toast.success('终端连接成功');
         setConnecting(false);
         setConnected(true);

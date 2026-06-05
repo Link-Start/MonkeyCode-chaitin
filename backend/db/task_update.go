@@ -13,9 +13,11 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/chaitin/MonkeyCode/backend/consts"
 	"github.com/chaitin/MonkeyCode/backend/db/gitbottask"
+	"github.com/chaitin/MonkeyCode/backend/db/gittask"
 	"github.com/chaitin/MonkeyCode/backend/db/predicate"
 	"github.com/chaitin/MonkeyCode/backend/db/projecttask"
 	"github.com/chaitin/MonkeyCode/backend/db/task"
+	"github.com/chaitin/MonkeyCode/backend/db/taskmodelswitch"
 	"github.com/chaitin/MonkeyCode/backend/db/taskvirtualmachine"
 	"github.com/chaitin/MonkeyCode/backend/db/user"
 	"github.com/chaitin/MonkeyCode/backend/db/virtualmachine"
@@ -118,6 +120,26 @@ func (_u *TaskUpdate) SetNillableContent(v *string) *TaskUpdate {
 	return _u
 }
 
+// SetTitle sets the "title" field.
+func (_u *TaskUpdate) SetTitle(v string) *TaskUpdate {
+	_u.mutation.SetTitle(v)
+	return _u
+}
+
+// SetNillableTitle sets the "title" field if the given value is not nil.
+func (_u *TaskUpdate) SetNillableTitle(v *string) *TaskUpdate {
+	if v != nil {
+		_u.SetTitle(*v)
+	}
+	return _u
+}
+
+// ClearTitle clears the value of the "title" field.
+func (_u *TaskUpdate) ClearTitle() *TaskUpdate {
+	_u.mutation.ClearTitle()
+	return _u
+}
+
 // SetSummary sets the "summary" field.
 func (_u *TaskUpdate) SetSummary(v string) *TaskUpdate {
 	_u.mutation.SetSummary(v)
@@ -152,6 +174,26 @@ func (_u *TaskUpdate) SetNillableStatus(v *consts.TaskStatus) *TaskUpdate {
 	return _u
 }
 
+// SetLogStore sets the "log_store" field.
+func (_u *TaskUpdate) SetLogStore(v consts.LogStore) *TaskUpdate {
+	_u.mutation.SetLogStore(v)
+	return _u
+}
+
+// SetNillableLogStore sets the "log_store" field if the given value is not nil.
+func (_u *TaskUpdate) SetNillableLogStore(v *consts.LogStore) *TaskUpdate {
+	if v != nil {
+		_u.SetLogStore(*v)
+	}
+	return _u
+}
+
+// ClearLogStore clears the value of the "log_store" field.
+func (_u *TaskUpdate) ClearLogStore() *TaskUpdate {
+	_u.mutation.ClearLogStore()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *TaskUpdate) SetCreatedAt(v time.Time) *TaskUpdate {
 	_u.mutation.SetCreatedAt(v)
@@ -162,6 +204,20 @@ func (_u *TaskUpdate) SetCreatedAt(v time.Time) *TaskUpdate {
 func (_u *TaskUpdate) SetNillableCreatedAt(v *time.Time) *TaskUpdate {
 	if v != nil {
 		_u.SetCreatedAt(*v)
+	}
+	return _u
+}
+
+// SetLastActiveAt sets the "last_active_at" field.
+func (_u *TaskUpdate) SetLastActiveAt(v time.Time) *TaskUpdate {
+	_u.mutation.SetLastActiveAt(v)
+	return _u
+}
+
+// SetNillableLastActiveAt sets the "last_active_at" field if the given value is not nil.
+func (_u *TaskUpdate) SetNillableLastActiveAt(v *time.Time) *TaskUpdate {
+	if v != nil {
+		_u.SetLastActiveAt(*v)
 	}
 	return _u
 }
@@ -207,6 +263,25 @@ func (_u *TaskUpdate) AddProjectTasks(v ...*ProjectTask) *TaskUpdate {
 	return _u.AddProjectTaskIDs(ids...)
 }
 
+// SetGitTasksID sets the "git_tasks" edge to the GitTask entity by ID.
+func (_u *TaskUpdate) SetGitTasksID(id uuid.UUID) *TaskUpdate {
+	_u.mutation.SetGitTasksID(id)
+	return _u
+}
+
+// SetNillableGitTasksID sets the "git_tasks" edge to the GitTask entity by ID if the given value is not nil.
+func (_u *TaskUpdate) SetNillableGitTasksID(id *uuid.UUID) *TaskUpdate {
+	if id != nil {
+		_u = _u.SetGitTasksID(*id)
+	}
+	return _u
+}
+
+// SetGitTasks sets the "git_tasks" edge to the GitTask entity.
+func (_u *TaskUpdate) SetGitTasks(v *GitTask) *TaskUpdate {
+	return _u.SetGitTasksID(v.ID)
+}
+
 // SetUser sets the "user" edge to the User entity.
 func (_u *TaskUpdate) SetUser(v *User) *TaskUpdate {
 	return _u.SetUserID(v.ID)
@@ -240,6 +315,21 @@ func (_u *TaskUpdate) AddGitBotTasks(v ...*GitBotTask) *TaskUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.AddGitBotTaskIDs(ids...)
+}
+
+// AddModelSwitchIDs adds the "model_switches" edge to the TaskModelSwitch entity by IDs.
+func (_u *TaskUpdate) AddModelSwitchIDs(ids ...uuid.UUID) *TaskUpdate {
+	_u.mutation.AddModelSwitchIDs(ids...)
+	return _u
+}
+
+// AddModelSwitches adds the "model_switches" edges to the TaskModelSwitch entity.
+func (_u *TaskUpdate) AddModelSwitches(v ...*TaskModelSwitch) *TaskUpdate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddModelSwitchIDs(ids...)
 }
 
 // AddTaskVMIDs adds the "task_vms" edge to the TaskVirtualMachine entity by IDs.
@@ -281,6 +371,12 @@ func (_u *TaskUpdate) RemoveProjectTasks(v ...*ProjectTask) *TaskUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveProjectTaskIDs(ids...)
+}
+
+// ClearGitTasks clears the "git_tasks" edge to the GitTask entity.
+func (_u *TaskUpdate) ClearGitTasks() *TaskUpdate {
+	_u.mutation.ClearGitTasks()
+	return _u
 }
 
 // ClearUser clears the "user" edge to the User entity.
@@ -329,6 +425,27 @@ func (_u *TaskUpdate) RemoveGitBotTasks(v ...*GitBotTask) *TaskUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveGitBotTaskIDs(ids...)
+}
+
+// ClearModelSwitches clears all "model_switches" edges to the TaskModelSwitch entity.
+func (_u *TaskUpdate) ClearModelSwitches() *TaskUpdate {
+	_u.mutation.ClearModelSwitches()
+	return _u
+}
+
+// RemoveModelSwitchIDs removes the "model_switches" edge to TaskModelSwitch entities by IDs.
+func (_u *TaskUpdate) RemoveModelSwitchIDs(ids ...uuid.UUID) *TaskUpdate {
+	_u.mutation.RemoveModelSwitchIDs(ids...)
+	return _u
+}
+
+// RemoveModelSwitches removes "model_switches" edges to TaskModelSwitch entities.
+func (_u *TaskUpdate) RemoveModelSwitches(v ...*TaskModelSwitch) *TaskUpdate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveModelSwitchIDs(ids...)
 }
 
 // ClearTaskVms clears all "task_vms" edges to the TaskVirtualMachine entity.
@@ -443,6 +560,12 @@ func (_u *TaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Content(); ok {
 		_spec.SetField(task.FieldContent, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.Title(); ok {
+		_spec.SetField(task.FieldTitle, field.TypeString, value)
+	}
+	if _u.mutation.TitleCleared() {
+		_spec.ClearField(task.FieldTitle, field.TypeString)
+	}
 	if value, ok := _u.mutation.Summary(); ok {
 		_spec.SetField(task.FieldSummary, field.TypeString, value)
 	}
@@ -452,8 +575,17 @@ func (_u *TaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(task.FieldStatus, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.LogStore(); ok {
+		_spec.SetField(task.FieldLogStore, field.TypeString, value)
+	}
+	if _u.mutation.LogStoreCleared() {
+		_spec.ClearField(task.FieldLogStore, field.TypeString)
+	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(task.FieldCreatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.LastActiveAt(); ok {
+		_spec.SetField(task.FieldLastActiveAt, field.TypeTime, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(task.FieldUpdatedAt, field.TypeTime, value)
@@ -502,6 +634,35 @@ func (_u *TaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(projecttask.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.GitTasksCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   task.GitTasksTable,
+			Columns: []string{task.GitTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(gittask.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.GitTasksIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   task.GitTasksTable,
+			Columns: []string{task.GitTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(gittask.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {
@@ -633,6 +794,51 @@ func (_u *TaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(gitbottask.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ModelSwitchesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.ModelSwitchesTable,
+			Columns: []string{task.ModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedModelSwitchesIDs(); len(nodes) > 0 && !_u.mutation.ModelSwitchesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.ModelSwitchesTable,
+			Columns: []string{task.ModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ModelSwitchesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.ModelSwitchesTable,
+			Columns: []string{task.ModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {
@@ -789,6 +995,26 @@ func (_u *TaskUpdateOne) SetNillableContent(v *string) *TaskUpdateOne {
 	return _u
 }
 
+// SetTitle sets the "title" field.
+func (_u *TaskUpdateOne) SetTitle(v string) *TaskUpdateOne {
+	_u.mutation.SetTitle(v)
+	return _u
+}
+
+// SetNillableTitle sets the "title" field if the given value is not nil.
+func (_u *TaskUpdateOne) SetNillableTitle(v *string) *TaskUpdateOne {
+	if v != nil {
+		_u.SetTitle(*v)
+	}
+	return _u
+}
+
+// ClearTitle clears the value of the "title" field.
+func (_u *TaskUpdateOne) ClearTitle() *TaskUpdateOne {
+	_u.mutation.ClearTitle()
+	return _u
+}
+
 // SetSummary sets the "summary" field.
 func (_u *TaskUpdateOne) SetSummary(v string) *TaskUpdateOne {
 	_u.mutation.SetSummary(v)
@@ -823,6 +1049,26 @@ func (_u *TaskUpdateOne) SetNillableStatus(v *consts.TaskStatus) *TaskUpdateOne 
 	return _u
 }
 
+// SetLogStore sets the "log_store" field.
+func (_u *TaskUpdateOne) SetLogStore(v consts.LogStore) *TaskUpdateOne {
+	_u.mutation.SetLogStore(v)
+	return _u
+}
+
+// SetNillableLogStore sets the "log_store" field if the given value is not nil.
+func (_u *TaskUpdateOne) SetNillableLogStore(v *consts.LogStore) *TaskUpdateOne {
+	if v != nil {
+		_u.SetLogStore(*v)
+	}
+	return _u
+}
+
+// ClearLogStore clears the value of the "log_store" field.
+func (_u *TaskUpdateOne) ClearLogStore() *TaskUpdateOne {
+	_u.mutation.ClearLogStore()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *TaskUpdateOne) SetCreatedAt(v time.Time) *TaskUpdateOne {
 	_u.mutation.SetCreatedAt(v)
@@ -833,6 +1079,20 @@ func (_u *TaskUpdateOne) SetCreatedAt(v time.Time) *TaskUpdateOne {
 func (_u *TaskUpdateOne) SetNillableCreatedAt(v *time.Time) *TaskUpdateOne {
 	if v != nil {
 		_u.SetCreatedAt(*v)
+	}
+	return _u
+}
+
+// SetLastActiveAt sets the "last_active_at" field.
+func (_u *TaskUpdateOne) SetLastActiveAt(v time.Time) *TaskUpdateOne {
+	_u.mutation.SetLastActiveAt(v)
+	return _u
+}
+
+// SetNillableLastActiveAt sets the "last_active_at" field if the given value is not nil.
+func (_u *TaskUpdateOne) SetNillableLastActiveAt(v *time.Time) *TaskUpdateOne {
+	if v != nil {
+		_u.SetLastActiveAt(*v)
 	}
 	return _u
 }
@@ -878,6 +1138,25 @@ func (_u *TaskUpdateOne) AddProjectTasks(v ...*ProjectTask) *TaskUpdateOne {
 	return _u.AddProjectTaskIDs(ids...)
 }
 
+// SetGitTasksID sets the "git_tasks" edge to the GitTask entity by ID.
+func (_u *TaskUpdateOne) SetGitTasksID(id uuid.UUID) *TaskUpdateOne {
+	_u.mutation.SetGitTasksID(id)
+	return _u
+}
+
+// SetNillableGitTasksID sets the "git_tasks" edge to the GitTask entity by ID if the given value is not nil.
+func (_u *TaskUpdateOne) SetNillableGitTasksID(id *uuid.UUID) *TaskUpdateOne {
+	if id != nil {
+		_u = _u.SetGitTasksID(*id)
+	}
+	return _u
+}
+
+// SetGitTasks sets the "git_tasks" edge to the GitTask entity.
+func (_u *TaskUpdateOne) SetGitTasks(v *GitTask) *TaskUpdateOne {
+	return _u.SetGitTasksID(v.ID)
+}
+
 // SetUser sets the "user" edge to the User entity.
 func (_u *TaskUpdateOne) SetUser(v *User) *TaskUpdateOne {
 	return _u.SetUserID(v.ID)
@@ -911,6 +1190,21 @@ func (_u *TaskUpdateOne) AddGitBotTasks(v ...*GitBotTask) *TaskUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.AddGitBotTaskIDs(ids...)
+}
+
+// AddModelSwitchIDs adds the "model_switches" edge to the TaskModelSwitch entity by IDs.
+func (_u *TaskUpdateOne) AddModelSwitchIDs(ids ...uuid.UUID) *TaskUpdateOne {
+	_u.mutation.AddModelSwitchIDs(ids...)
+	return _u
+}
+
+// AddModelSwitches adds the "model_switches" edges to the TaskModelSwitch entity.
+func (_u *TaskUpdateOne) AddModelSwitches(v ...*TaskModelSwitch) *TaskUpdateOne {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddModelSwitchIDs(ids...)
 }
 
 // AddTaskVMIDs adds the "task_vms" edge to the TaskVirtualMachine entity by IDs.
@@ -952,6 +1246,12 @@ func (_u *TaskUpdateOne) RemoveProjectTasks(v ...*ProjectTask) *TaskUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveProjectTaskIDs(ids...)
+}
+
+// ClearGitTasks clears the "git_tasks" edge to the GitTask entity.
+func (_u *TaskUpdateOne) ClearGitTasks() *TaskUpdateOne {
+	_u.mutation.ClearGitTasks()
+	return _u
 }
 
 // ClearUser clears the "user" edge to the User entity.
@@ -1000,6 +1300,27 @@ func (_u *TaskUpdateOne) RemoveGitBotTasks(v ...*GitBotTask) *TaskUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveGitBotTaskIDs(ids...)
+}
+
+// ClearModelSwitches clears all "model_switches" edges to the TaskModelSwitch entity.
+func (_u *TaskUpdateOne) ClearModelSwitches() *TaskUpdateOne {
+	_u.mutation.ClearModelSwitches()
+	return _u
+}
+
+// RemoveModelSwitchIDs removes the "model_switches" edge to TaskModelSwitch entities by IDs.
+func (_u *TaskUpdateOne) RemoveModelSwitchIDs(ids ...uuid.UUID) *TaskUpdateOne {
+	_u.mutation.RemoveModelSwitchIDs(ids...)
+	return _u
+}
+
+// RemoveModelSwitches removes "model_switches" edges to TaskModelSwitch entities.
+func (_u *TaskUpdateOne) RemoveModelSwitches(v ...*TaskModelSwitch) *TaskUpdateOne {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveModelSwitchIDs(ids...)
 }
 
 // ClearTaskVms clears all "task_vms" edges to the TaskVirtualMachine entity.
@@ -1144,6 +1465,12 @@ func (_u *TaskUpdateOne) sqlSave(ctx context.Context) (_node *Task, err error) {
 	if value, ok := _u.mutation.Content(); ok {
 		_spec.SetField(task.FieldContent, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.Title(); ok {
+		_spec.SetField(task.FieldTitle, field.TypeString, value)
+	}
+	if _u.mutation.TitleCleared() {
+		_spec.ClearField(task.FieldTitle, field.TypeString)
+	}
 	if value, ok := _u.mutation.Summary(); ok {
 		_spec.SetField(task.FieldSummary, field.TypeString, value)
 	}
@@ -1153,8 +1480,17 @@ func (_u *TaskUpdateOne) sqlSave(ctx context.Context) (_node *Task, err error) {
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(task.FieldStatus, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.LogStore(); ok {
+		_spec.SetField(task.FieldLogStore, field.TypeString, value)
+	}
+	if _u.mutation.LogStoreCleared() {
+		_spec.ClearField(task.FieldLogStore, field.TypeString)
+	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(task.FieldCreatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.LastActiveAt(); ok {
+		_spec.SetField(task.FieldLastActiveAt, field.TypeTime, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(task.FieldUpdatedAt, field.TypeTime, value)
@@ -1203,6 +1539,35 @@ func (_u *TaskUpdateOne) sqlSave(ctx context.Context) (_node *Task, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(projecttask.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.GitTasksCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   task.GitTasksTable,
+			Columns: []string{task.GitTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(gittask.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.GitTasksIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   task.GitTasksTable,
+			Columns: []string{task.GitTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(gittask.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {
@@ -1334,6 +1699,51 @@ func (_u *TaskUpdateOne) sqlSave(ctx context.Context) (_node *Task, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(gitbottask.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ModelSwitchesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.ModelSwitchesTable,
+			Columns: []string{task.ModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedModelSwitchesIDs(); len(nodes) > 0 && !_u.mutation.ModelSwitchesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.ModelSwitchesTable,
+			Columns: []string{task.ModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ModelSwitchesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.ModelSwitchesTable,
+			Columns: []string{task.ModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {

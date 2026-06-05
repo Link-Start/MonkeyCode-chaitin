@@ -19,6 +19,7 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/gitidentity"
 	"github.com/chaitin/MonkeyCode/backend/db/host"
 	"github.com/chaitin/MonkeyCode/backend/db/image"
+	"github.com/chaitin/MonkeyCode/backend/db/mcpupstream"
 	"github.com/chaitin/MonkeyCode/backend/db/model"
 	"github.com/chaitin/MonkeyCode/backend/db/predicate"
 	"github.com/chaitin/MonkeyCode/backend/db/project"
@@ -26,6 +27,7 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/projectissue"
 	"github.com/chaitin/MonkeyCode/backend/db/projectissuecomment"
 	"github.com/chaitin/MonkeyCode/backend/db/task"
+	"github.com/chaitin/MonkeyCode/backend/db/taskmodelswitch"
 	"github.com/chaitin/MonkeyCode/backend/db/team"
 	"github.com/chaitin/MonkeyCode/backend/db/teamgroup"
 	"github.com/chaitin/MonkeyCode/backend/db/teamgroupmember"
@@ -52,6 +54,7 @@ type UserQuery struct {
 	withHosts                *HostQuery
 	withVms                  *VirtualMachineQuery
 	withTasks                *TaskQuery
+	withTaskModelSwitches    *TaskModelSwitchQuery
 	withGitIdentities        *GitIdentityQuery
 	withProjects             *ProjectQuery
 	withProjectIssues        *ProjectIssueQuery
@@ -59,6 +62,7 @@ type UserQuery struct {
 	withProjectCollaborators *ProjectCollaboratorQuery
 	withProjectIssueComments *ProjectIssueCommentQuery
 	withGitBots              *GitBotQuery
+	withMcpUpstreams         *MCPUpstreamQuery
 	withTeamMembers          *TeamMemberQuery
 	withTeamGroupMembers     *TeamGroupMemberQuery
 	withGitBotUsers          *GitBotUserQuery
@@ -297,6 +301,28 @@ func (_q *UserQuery) QueryTasks() *TaskQuery {
 	return query
 }
 
+// QueryTaskModelSwitches chains the current query on the "task_model_switches" edge.
+func (_q *UserQuery) QueryTaskModelSwitches() *TaskModelSwitchQuery {
+	query := (&TaskModelSwitchClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(taskmodelswitch.Table, taskmodelswitch.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.TaskModelSwitchesTable, user.TaskModelSwitchesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
 // QueryGitIdentities chains the current query on the "git_identities" edge.
 func (_q *UserQuery) QueryGitIdentities() *GitIdentityQuery {
 	query := (&GitIdentityClient{config: _q.config}).Query()
@@ -444,6 +470,28 @@ func (_q *UserQuery) QueryGitBots() *GitBotQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(gitbot.Table, gitbot.FieldID),
 			sqlgraph.Edge(sqlgraph.M2M, false, user.GitBotsTable, user.GitBotsPrimaryKey...),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryMcpUpstreams chains the current query on the "mcp_upstreams" edge.
+func (_q *UserQuery) QueryMcpUpstreams() *MCPUpstreamQuery {
+	query := (&MCPUpstreamClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(mcpupstream.Table, mcpupstream.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.McpUpstreamsTable, user.McpUpstreamsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -718,6 +766,7 @@ func (_q *UserQuery) Clone() *UserQuery {
 		withHosts:                _q.withHosts.Clone(),
 		withVms:                  _q.withVms.Clone(),
 		withTasks:                _q.withTasks.Clone(),
+		withTaskModelSwitches:    _q.withTaskModelSwitches.Clone(),
 		withGitIdentities:        _q.withGitIdentities.Clone(),
 		withProjects:             _q.withProjects.Clone(),
 		withProjectIssues:        _q.withProjectIssues.Clone(),
@@ -725,6 +774,7 @@ func (_q *UserQuery) Clone() *UserQuery {
 		withProjectCollaborators: _q.withProjectCollaborators.Clone(),
 		withProjectIssueComments: _q.withProjectIssueComments.Clone(),
 		withGitBots:              _q.withGitBots.Clone(),
+		withMcpUpstreams:         _q.withMcpUpstreams.Clone(),
 		withTeamMembers:          _q.withTeamMembers.Clone(),
 		withTeamGroupMembers:     _q.withTeamGroupMembers.Clone(),
 		withGitBotUsers:          _q.withGitBotUsers.Clone(),
@@ -834,6 +884,17 @@ func (_q *UserQuery) WithTasks(opts ...func(*TaskQuery)) *UserQuery {
 	return _q
 }
 
+// WithTaskModelSwitches tells the query-builder to eager-load the nodes that are connected to
+// the "task_model_switches" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithTaskModelSwitches(opts ...func(*TaskModelSwitchQuery)) *UserQuery {
+	query := (&TaskModelSwitchClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withTaskModelSwitches = query
+	return _q
+}
+
 // WithGitIdentities tells the query-builder to eager-load the nodes that are connected to
 // the "git_identities" edge. The optional arguments are used to configure the query builder of the edge.
 func (_q *UserQuery) WithGitIdentities(opts ...func(*GitIdentityQuery)) *UserQuery {
@@ -908,6 +969,17 @@ func (_q *UserQuery) WithGitBots(opts ...func(*GitBotQuery)) *UserQuery {
 		opt(query)
 	}
 	_q.withGitBots = query
+	return _q
+}
+
+// WithMcpUpstreams tells the query-builder to eager-load the nodes that are connected to
+// the "mcp_upstreams" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithMcpUpstreams(opts ...func(*MCPUpstreamQuery)) *UserQuery {
+	query := (&MCPUpstreamClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withMcpUpstreams = query
 	return _q
 }
 
@@ -1022,7 +1094,7 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [19]bool{
+		loadedTypes = [21]bool{
 			_q.withIdentities != nil,
 			_q.withAudits != nil,
 			_q.withTeams != nil,
@@ -1032,6 +1104,7 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			_q.withHosts != nil,
 			_q.withVms != nil,
 			_q.withTasks != nil,
+			_q.withTaskModelSwitches != nil,
 			_q.withGitIdentities != nil,
 			_q.withProjects != nil,
 			_q.withProjectIssues != nil,
@@ -1039,6 +1112,7 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			_q.withProjectCollaborators != nil,
 			_q.withProjectIssueComments != nil,
 			_q.withGitBots != nil,
+			_q.withMcpUpstreams != nil,
 			_q.withTeamMembers != nil,
 			_q.withTeamGroupMembers != nil,
 			_q.withGitBotUsers != nil,
@@ -1128,6 +1202,13 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			return nil, err
 		}
 	}
+	if query := _q.withTaskModelSwitches; query != nil {
+		if err := _q.loadTaskModelSwitches(ctx, query, nodes,
+			func(n *User) { n.Edges.TaskModelSwitches = []*TaskModelSwitch{} },
+			func(n *User, e *TaskModelSwitch) { n.Edges.TaskModelSwitches = append(n.Edges.TaskModelSwitches, e) }); err != nil {
+			return nil, err
+		}
+	}
 	if query := _q.withGitIdentities; query != nil {
 		if err := _q.loadGitIdentities(ctx, query, nodes,
 			func(n *User) { n.Edges.GitIdentities = []*GitIdentity{} },
@@ -1178,6 +1259,13 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := _q.loadGitBots(ctx, query, nodes,
 			func(n *User) { n.Edges.GitBots = []*GitBot{} },
 			func(n *User, e *GitBot) { n.Edges.GitBots = append(n.Edges.GitBots, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withMcpUpstreams; query != nil {
+		if err := _q.loadMcpUpstreams(ctx, query, nodes,
+			func(n *User) { n.Edges.McpUpstreams = []*MCPUpstream{} },
+			func(n *User, e *MCPUpstream) { n.Edges.McpUpstreams = append(n.Edges.McpUpstreams, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -1537,6 +1625,36 @@ func (_q *UserQuery) loadTasks(ctx context.Context, query *TaskQuery, nodes []*U
 	}
 	return nil
 }
+func (_q *UserQuery) loadTaskModelSwitches(ctx context.Context, query *TaskModelSwitchQuery, nodes []*User, init func(*User), assign func(*User, *TaskModelSwitch)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uuid.UUID]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(taskmodelswitch.FieldUserID)
+	}
+	query.Where(predicate.TaskModelSwitch(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.TaskModelSwitchesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
 func (_q *UserQuery) loadGitIdentities(ctx context.Context, query *GitIdentityQuery, nodes []*User, init func(*User), assign func(*User, *GitIdentity)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[uuid.UUID]*User)
@@ -1775,6 +1893,39 @@ func (_q *UserQuery) loadGitBots(ctx context.Context, query *GitBotQuery, nodes 
 		for kn := range nodes {
 			assign(kn, n)
 		}
+	}
+	return nil
+}
+func (_q *UserQuery) loadMcpUpstreams(ctx context.Context, query *MCPUpstreamQuery, nodes []*User, init func(*User), assign func(*User, *MCPUpstream)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uuid.UUID]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(mcpupstream.FieldUserID)
+	}
+	query.Where(predicate.MCPUpstream(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.McpUpstreamsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
 	}
 	return nil
 }

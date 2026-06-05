@@ -23,9 +23,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Spinner } from "@/components/ui/spinner"
 import { CircleQuestionMark } from 'lucide-react'
-import { getModelUrlDescription, modelProviderList } from "@/utils/common"
+import { getModelDisplayName, getModelUrlDescription, modelProviderList } from "@/utils/common"
 
 interface AddModelProps {
   open: boolean
@@ -39,9 +40,14 @@ export default function AddModel({
   onRefresh,
 }: AddModelProps) {
   const [model, setModel] = useState("")
+  const [remark, setRemark] = useState("")
   const [apiToken, setApiToken] = useState("")
   const [baseUrl, setBaseUrl] = useState("https://model-square.app.baizhi.cloud/v1")
   const [interfaceType, setInterfaceType] = useState<ConstsInterfaceType>(ConstsInterfaceType.InterfaceTypeOpenAIChat)
+  const [contextLimit, setContextLimit] = useState("200000")
+  const [outputLimit, setOutputLimit] = useState("32000")
+  const [thinkingEnabled, setThinkingEnabled] = useState(true)
+  const [supportImage, setSupportImage] = useState(false)
   const [modelList, setModelList] = useState<DomainProviderModelListItem[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -67,6 +73,16 @@ export default function AddModel({
     !loadingModels &&
     modelListAttempted &&
     (modelListFetchFailed || modelList.length === 0)
+
+  const parsePositiveInteger = (value: string, label: string) => {
+    const parsedValue = Number(value.trim())
+    if (!Number.isInteger(parsedValue) || parsedValue < 1) {
+      toast.error(`${label}必须为大于 0 的整数`)
+      return null
+    }
+
+    return parsedValue
+  }
 
   const fetchModelList = async () => {
     if (!apiToken.trim()) {
@@ -119,6 +135,14 @@ export default function AddModel({
       toast.error("请输入模型 API 地址")
       return
     }
+    const parsedContextLimit = parsePositiveInteger(contextLimit, "上下文长度")
+    if (parsedContextLimit === null) {
+      return
+    }
+    const parsedOutputLimit = parsePositiveInteger(outputLimit, "输出长度")
+    if (parsedOutputLimit === null) {
+      return
+    }
 
     setSaving(true)
 
@@ -138,18 +162,28 @@ export default function AddModel({
           const requestData: any = {
             provider: "BaiZhiCloud",
             model: model.trim(),
+            remark: remark.trim(),
             base_url: baseUrl.trim(),
             api_key: apiToken.trim(),
             interface_type: interfaceType,
+            context_limit: parsedContextLimit,
+            output_limit: parsedOutputLimit,
+            thinking_enabled: thinkingEnabled,
+            support_image: supportImage,
           }
 
           await apiRequest('v1UsersModelsCreate', requestData, [], (resp) => {
             if (resp.code === 0) {
               toast.success("模型绑定成功")
               setModel("")
+              setRemark("")
               setApiToken("")
               setBaseUrl("https://model-square.app.baizhi.cloud/v1")
               setInterfaceType(ConstsInterfaceType.InterfaceTypeOpenAIChat)
+              setContextLimit("200000")
+              setOutputLimit("32000")
+              setThinkingEnabled(true)
+              setSupportImage(false)
               resetModelListState()
               onOpenChange(false)
               onRefresh?.()
@@ -168,9 +202,14 @@ export default function AddModel({
 
   const handleCancel = () => {
     setModel("")
+    setRemark("")
     setApiToken("")
     setBaseUrl("https://model-square.app.baizhi.cloud/v1")
     setInterfaceType(ConstsInterfaceType.InterfaceTypeOpenAIChat)
+    setContextLimit("200000")
+    setOutputLimit("32000")
+    setThinkingEnabled(true)
+    setSupportImage(false)
     resetModelListState()
     onOpenChange(false)
   }
@@ -325,7 +364,7 @@ export default function AddModel({
                               <SelectLabel>{groupKey}</SelectLabel>
                               {groups[groupKey].map((item, index) => (
                                 <SelectItem key={`${groupKey}-${index}`} value={item.model || ""}>
-                                  {item.model}
+                                  {getModelDisplayName(item.model)}
                                 </SelectItem>
                               ))}
                             </SelectGroup>
@@ -342,6 +381,75 @@ export default function AddModel({
               )}
             </FieldContent>
           </Field>
+          <Field>
+            <FieldLabel>备注</FieldLabel>
+            <FieldContent>
+              <Input
+                placeholder="请输入备注（选填）"
+                value={remark}
+                onChange={(e) => setRemark(e.target.value)}
+              />
+            </FieldContent>
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field>
+              <FieldLabel>上下文长度</FieldLabel>
+              <FieldContent>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  placeholder="请输入上下文长度"
+                  value={contextLimit}
+                  onChange={(e) => setContextLimit(e.target.value)}
+                />
+              </FieldContent>
+            </Field>
+            <Field>
+              <FieldLabel>输出长度</FieldLabel>
+              <FieldContent>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  placeholder="请输入输出长度"
+                  value={outputLimit}
+                  onChange={(e) => setOutputLimit(e.target.value)}
+                />
+              </FieldContent>
+            </Field>
+          </div>
+          <Field>
+            <FieldLabel>推理 / 思考</FieldLabel>
+            <FieldContent>
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <span className="text-sm text-muted-foreground">
+                  {thinkingEnabled ? "启用" : "禁用"}
+                </span>
+                <Switch
+                  checked={thinkingEnabled}
+                  onCheckedChange={setThinkingEnabled}
+                  disabled={saving}
+                />
+              </div>
+            </FieldContent>
+          </Field>
+          <Field>
+            <FieldLabel>图片识别</FieldLabel>
+            <FieldContent>
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <span className="text-sm text-muted-foreground">
+                  {supportImage ? "支持" : "不支持"}
+                </span>
+                <Switch
+                  checked={supportImage}
+                  onCheckedChange={setSupportImage}
+                  disabled={saving}
+                />
+              </div>
+            </FieldContent>
+            <FieldDescription>开启后，该模型可接收图片输入用于识别和分析。</FieldDescription>
+          </Field>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleCancel} disabled={saving}>
@@ -356,4 +464,3 @@ export default function AddModel({
     </Dialog>
   )
 }
-

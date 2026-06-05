@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -15,8 +14,8 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db"
 	"github.com/chaitin/MonkeyCode/backend/domain"
 	"github.com/chaitin/MonkeyCode/backend/errcode"
-	"github.com/chaitin/MonkeyCode/backend/pkg/crypto"
 	"github.com/chaitin/MonkeyCode/backend/pkg/cvt"
+	"github.com/chaitin/MonkeyCode/backend/pkg/random"
 )
 
 // TeamGroupUserUsecase 团队分组成员业务逻辑层
@@ -27,6 +26,7 @@ type TeamGroupUserUsecase struct {
 	config      *config.Config
 	smtpClient  domain.EmailSender
 	redisClient *redis.Client
+	teamHook    domain.TeamHook
 }
 
 // NewTeamGroupUserUsecase 创建团队分组成员业务逻辑层实例
@@ -40,6 +40,10 @@ func NewTeamGroupUserUsecase(i *do.Injector) (domain.TeamGroupUserUsecase, error
 		config:      cfg,
 		smtpClient:  do.MustInvoke[domain.EmailSender](i),
 		redisClient: do.MustInvoke[*redis.Client](i),
+	}
+
+	if hook, err := do.Invoke[domain.TeamHook](i); err == nil {
+		t.teamHook = hook
 	}
 
 	go t.initTeam()
@@ -58,7 +62,7 @@ func (u *TeamGroupUserUsecase) initTeam() {
 	}
 
 	ctx := context.Background()
-	if err := u.repo.InitTeam(ctx, u.config.InitTeam.Email, name, u.config.InitTeam.Password); err != nil {
+	if err := u.repo.InitTeam(ctx, u.config.InitTeam.Email, name, u.config.InitTeam.Password, u.config.InitTeam.Image); err != nil {
 		u.logger.ErrorContext(ctx, "init team failed", "error", err)
 		return
 	}
@@ -87,60 +91,20 @@ func (u *TeamGroupUserUsecase) Add(ctx context.Context, teamUser *domain.TeamUse
 	return cvt.From(group, &domain.TeamGroup{}), nil
 }
 
-// AddUser 创建团队成员
-func (u *TeamGroupUserUsecase) AddUser(ctx context.Context, teamUser *domain.TeamUser, req *domain.AddTeamUserReq) (*domain.AddTeamUserResp, error) {
-	users, err := u.repo.CreateUsers(ctx, teamUser.GetTeamID(), req)
+func (u *TeamGroupUserUsecase) ResetPassword(ctx context.Context, teamUser *domain.TeamUser, req *domain.ResetPasswordReq) (*domain.TeamUserPassword, error) {
+	member, err := u.repo.GetMember(ctx, teamUser.GetTeamID(), req.UserID)
 	if err != nil {
 		return nil, err
 	}
-	// 发送重置密码邮件（如果没有发送成功就用户自己请求重置）
-	for _, user := range users {
-		if user.Email != "" {
-			token, err := u.generateResetPWDToken(ctx, user.ID)
-			if err != nil {
-				u.logger.ErrorContext(ctx, "generate reset password token failed", "error", err)
-				continue
-			}
-			// 存一份到 redis
-			key := fmt.Sprintf("reset_password_token:%s", user.ID.String())
-			if err := u.redisClient.Set(ctx, key, token, time.Hour*24).Err(); err != nil {
-				u.logger.ErrorContext(ctx, "set redis failed", "key", key, "token", token, "error", err)
-				continue
-			}
-			u.logger.InfoContext(ctx, "set redis success", "key", key, "token", token)
-			go u.sendResetPasswordEmail(ctx, user.Email, user.Name, token)
-		}
-	}
-	teamUsers := cvt.Iter(users, func(_ int, user *db.User) *domain.TeamUser {
-		return cvt.From(user, &domain.TeamUser{})
-	})
-	return &domain.AddTeamUserResp{Users: teamUsers}, nil
-}
-
-// AddAdmin 创建团队管理员
-func (u *TeamGroupUserUsecase) AddAdmin(ctx context.Context, teamUser *domain.TeamUser, req *domain.AddTeamAdminReq) (*domain.AddTeamAdminResp, error) {
-	user, err := u.repo.CreateAdmin(ctx, teamUser.GetTeamID(), req)
-	if err != nil {
+	password := random.String(16)
+	if err := u.repo.ResetPassword(ctx, req.UserID, password); err != nil {
 		return nil, err
 	}
-	if user.Email != "" {
-		token, err := u.generateResetPWDToken(ctx, user.ID)
-		if err != nil {
-			u.logger.ErrorContext(ctx, "generate reset password token failed", "error", err)
-			return nil, err
-		}
-		// 存一份到 redis
-		key := fmt.Sprintf("reset_password_token:%s", user.ID.String())
-		if err := u.redisClient.Set(ctx, key, token, time.Hour*24).Err(); err != nil {
-			u.logger.ErrorContext(ctx, "set redis failed", "key", key, "token", token, "error", err)
-			return nil, err
-		}
-		u.logger.InfoContext(ctx, "set redis success", "key", key, "token", token)
-		go u.sendResetPasswordEmail(ctx, user.Email, user.Name, token)
+	resp := &domain.TeamUserPassword{Password: password}
+	if member.Edges.User != nil {
+		resp.Email = member.Edges.User.Email
 	}
-
-	teamUserResp := cvt.From(user, &domain.TeamUser{})
-	return &domain.AddTeamAdminResp{User: teamUserResp}, nil
+	return resp, nil
 }
 
 // Update 更新团队分组
@@ -252,12 +216,10 @@ func (u *TeamGroupUserUsecase) UpdateUser(ctx context.Context, req *domain.Updat
 }
 
 // generateResetPWDToken 生成重置密码的 token
+// 使用 UUID 作为随机 handle，实际过期时间由 Redis TTL 控制，
+// 避免 base32 填充字符在邮件传输中被破坏。
 func (u *TeamGroupUserUsecase) generateResetPWDToken(ctx context.Context, userID uuid.UUID) (string, error) {
-	token, err := crypto.Simple(userID.String(), time.Now().Add(time.Hour*24*3))
-	if err != nil {
-		return "", err
-	}
-	return token, nil
+	return uuid.NewString(), nil
 }
 
 // sendResetPasswordEmail 发送重置密码邮件

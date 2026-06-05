@@ -23,6 +23,7 @@ type ModelUsecase interface {
 // ModelRepo 模型配置数据仓库接口
 type ModelRepo interface {
 	Get(ctx context.Context, uid, id uuid.UUID) (*db.Model, error)
+	CreateRuntimeAPIKey(ctx context.Context, uid, modelID uuid.UUID, vmID string) (string, error)
 	List(ctx context.Context, uid uuid.UUID, cursor CursorReq) ([]*db.Model, *db.Cursor, error)
 	Create(ctx context.Context, uid uuid.UUID, req *CreateModelReq) (*db.Model, error)
 	Delete(ctx context.Context, uid, id uuid.UUID) error
@@ -37,10 +38,12 @@ type Model struct {
 	APIKey           string               `json:"api_key,omitempty"`
 	BaseURL          string               `json:"base_url"`
 	Model            string               `json:"model"`
+	Remark           string               `json:"remark,omitempty"`
 	Temperature      float64              `json:"temperature"`
 	IsDefault        bool                 `json:"is_default"`
 	CreatedAt        int64                `json:"created_at"`
 	UpdatedAt        int64                `json:"updated_at"`
+	Weight           int                  `json:"weight"`
 	Owner            *Owner               `json:"owner,omitempty"`
 	InterfaceType    consts.InterfaceType `json:"interface_type"`
 	IsFree           bool                 `json:"is_free"`
@@ -48,6 +51,11 @@ type Model struct {
 	LastCheckAt      int64                `json:"last_check_at"`
 	LastCheckSuccess bool                 `json:"last_check_success"`
 	LastCheckError   string               `json:"last_check_error"`
+	ThinkingEnabled  bool                 `json:"thinking_enabled"`
+	SupportImage     bool                 `json:"support_image"`
+	IsHidden         bool                 `json:"is_hidden"`
+	ContextLimit     int                  `json:"context_limit"`
+	OutputLimit      int                  `json:"output_limit"`
 }
 
 func (m *Model) From(src *db.Model) *Model {
@@ -60,18 +68,20 @@ func (m *Model) From(src *db.Model) *Model {
 	m.APIKey = src.APIKey
 	m.BaseURL = src.BaseURL
 	m.Model = src.Model
+	m.Remark = src.Remark
 	m.Temperature = src.Temperature
 	m.InterfaceType = consts.InterfaceType(src.InterfaceType)
+	m.Weight = src.Weight
 	m.LastCheckSuccess = src.LastCheckSuccess
 	m.LastCheckError = src.LastCheckError
+	m.ThinkingEnabled = src.ThinkingEnabled
+	m.SupportImage = src.SupportImage
+	m.IsHidden = src.IsHidden
+	m.ContextLimit = src.ContextLimit
+	m.OutputLimit = src.OutputLimit
 	m.CreatedAt = src.CreatedAt.Unix()
 	m.UpdatedAt = src.UpdatedAt.Unix()
 	m.LastCheckAt = src.LastCheckAt.Unix()
-
-	if src.Remark == "economy" {
-		m.APIKey = ""
-		m.BaseURL = ""
-	}
 
 	if src.Edges.User == nil {
 		return m
@@ -90,9 +100,83 @@ func (m *Model) From(src *db.Model) *Model {
 			Type: consts.OwnerTypeTeam,
 			Name: team.Name,
 		}
-		m.APIKey = ""
 		return m
 	}
+	if src.Edges.User.Role == consts.UserRoleAdmin {
+		m.Owner = &Owner{
+			ID:   src.Edges.User.ID.String(),
+			Type: consts.OwnerTypePublic,
+			Name: consts.MonkeyCodeAITeamName,
+		}
+		return m
+	}
+	return m
+}
+
+func (m *Model) HideCredentials() *Model {
+	if m == nil {
+		return m
+	}
+	m.APIKey = ""
+	m.BaseURL = ""
+	return m
+}
+
+func (m *Model) HideSharedCredentials() *Model {
+	if m == nil || m.Owner == nil || m.Owner.Type == consts.OwnerTypePrivate {
+		return m
+	}
+	return m.HideCredentials()
+}
+
+type ModelBrief struct {
+	ID               uuid.UUID            `json:"id"`
+	Provider         string               `json:"provider"`
+	Model            string               `json:"model"`
+	Remark           string               `json:"remark,omitempty"`
+	Temperature      float64              `json:"temperature"`
+	CreatedAt        int64                `json:"created_at"`
+	UpdatedAt        int64                `json:"updated_at"`
+	Weight           int                  `json:"weight"`
+	Owner            *Owner               `json:"owner,omitempty"`
+	InterfaceType    consts.InterfaceType `json:"interface_type"`
+	IsFree           bool                 `json:"is_free"`
+	AccessLevel      string               `json:"access_level"`
+	LastCheckAt      int64                `json:"last_check_at"`
+	LastCheckSuccess bool                 `json:"last_check_success"`
+	LastCheckError   string               `json:"last_check_error"`
+	ThinkingEnabled  bool                 `json:"thinking_enabled"`
+	SupportImage     bool                 `json:"support_image"`
+	IsHidden         bool                 `json:"is_hidden"`
+	ContextLimit     int                  `json:"context_limit"`
+	OutputLimit      int                  `json:"output_limit"`
+}
+
+func (m *ModelBrief) From(src *db.Model) *ModelBrief {
+	if src == nil {
+		return m
+	}
+	full := (&Model{}).From(src)
+	m.ID = full.ID
+	m.Provider = full.Provider
+	m.Model = full.Model
+	m.Remark = full.Remark
+	m.Temperature = full.Temperature
+	m.CreatedAt = full.CreatedAt
+	m.UpdatedAt = full.UpdatedAt
+	m.Weight = full.Weight
+	m.Owner = full.Owner
+	m.InterfaceType = full.InterfaceType
+	m.IsFree = full.IsFree
+	m.AccessLevel = full.AccessLevel
+	m.LastCheckAt = full.LastCheckAt
+	m.LastCheckSuccess = full.LastCheckSuccess
+	m.LastCheckError = full.LastCheckError
+	m.ThinkingEnabled = full.ThinkingEnabled
+	m.SupportImage = full.SupportImage
+	m.IsHidden = full.IsHidden
+	m.ContextLimit = full.ContextLimit
+	m.OutputLimit = full.OutputLimit
 	return m
 }
 
@@ -113,13 +197,19 @@ type ListModelResp struct {
 
 // CreateModelReq 创建模型配置请求
 type CreateModelReq struct {
-	Provider      string               `json:"provider" validate:"required"`
-	APIKey        string               `json:"api_key" validate:"required"`
-	BaseURL       string               `json:"base_url" validate:"required"`
-	Model         string               `json:"model" validate:"required"`
-	Temperature   float32              `json:"temperature"`
-	IsDefault     bool                 `json:"is_default"`
-	InterfaceType consts.InterfaceType `json:"interface_type" validate:"required,oneof=openai_chat openai_responses anthropic"`
+	Provider        string               `json:"provider" validate:"required"`
+	APIKey          string               `json:"api_key" validate:"required"`
+	BaseURL         string               `json:"base_url" validate:"required"`
+	Model           string               `json:"model" validate:"required"`
+	Remark          string               `json:"remark,omitempty"`
+	Temperature     float32              `json:"temperature"`
+	IsDefault       bool                 `json:"is_default"`
+	InterfaceType   consts.InterfaceType `json:"interface_type" validate:"required,oneof=openai_chat openai_responses anthropic"`
+	ThinkingEnabled *bool                `json:"thinking_enabled"`
+	SupportImage    *bool                `json:"support_image"`
+	IsHidden        *bool                `json:"is_hidden"`
+	ContextLimit    *int                 `json:"context_limit"`
+	OutputLimit     *int                 `json:"output_limit"`
 }
 
 // CreateModelResp 创建模型配置响应
@@ -154,14 +244,20 @@ type CheckModelResp struct {
 
 // UpdateModelReq 更新模型配置请求
 type UpdateModelReq struct {
-	ID            uuid.UUID             `param:"id" validate:"required" json:"-" swaggerignore:"true"`
-	Provider      *string               `json:"provider,omitempty"`
-	APIKey        *string               `json:"api_key,omitempty"`
-	BaseURL       *string               `json:"base_url,omitempty"`
-	Model         *string               `json:"model,omitempty"`
-	Temperature   *float32              `json:"temperature,omitempty"`
-	IsDefault     *bool                 `json:"is_default,omitempty"`
-	InterfaceType *consts.InterfaceType `json:"interface_type,omitempty" validate:"omitempty,oneof=openai_chat openai_responses anthropic"`
+	ID              uuid.UUID             `param:"id" validate:"required" json:"-" swaggerignore:"true"`
+	Provider        *string               `json:"provider,omitempty"`
+	APIKey          *string               `json:"api_key,omitempty"`
+	BaseURL         *string               `json:"base_url,omitempty"`
+	Model           *string               `json:"model,omitempty"`
+	Remark          *string               `json:"remark,omitempty"`
+	Temperature     *float32              `json:"temperature,omitempty"`
+	IsDefault       *bool                 `json:"is_default,omitempty"`
+	InterfaceType   *consts.InterfaceType `json:"interface_type,omitempty" validate:"omitempty,oneof=openai_chat openai_responses anthropic"`
+	ThinkingEnabled *bool                 `json:"thinking_enabled,omitempty"`
+	SupportImage    *bool                 `json:"support_image,omitempty"`
+	IsHidden        *bool                 `json:"is_hidden,omitempty"`
+	ContextLimit    *int                  `json:"context_limit,omitempty"`
+	OutputLimit     *int                  `json:"output_limit,omitempty"`
 }
 
 type GetProviderModelListReq struct {

@@ -27,7 +27,7 @@ import {
   MoreVertical,
 } from "lucide-react"
 import { apiRequest } from "@/utils/requestUtils"
-import { getHostBadges } from "@/utils/common"
+import { canManageDevEnvironment, getHostBadges } from "@/utils/common"
 import { toast } from "sonner"
 import { type DomainHost, ConstsOwnerType, TaskflowVirtualMachineStatus } from "@/api/Api"
 import {
@@ -49,7 +49,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { IconAlertHexagon, IconPencil, IconStar, IconTrash } from "@tabler/icons-react"
+import { IconAlertHexagon, IconPencil, IconTrash } from "@tabler/icons-react"
 import { useCommonData } from "../data-provider"
 
 export default function Hosts() {
@@ -61,9 +61,16 @@ export default function Hosts() {
   const [remarkInput, setRemarkInput] = useState("")
   const [remarkLoading, setRemarkLoading] = useState(false)
 
-  const { hosts, reloadHosts, loadingHosts } = useCommonData();
+  const { hosts, reloadHosts, loadingHosts, user } = useCommonData();
+  const canManageHosts = canManageDevEnvironment(user)
 
   const fetchInstallCommand = async () => {
+    if (!canManageHosts) {
+      toast.error("仅团队空间支持绑定宿主机")
+      setOpen(false)
+      return
+    }
+
     setLoadingCommand(true)
     await apiRequest('v1UsersHostsInstallCommandList', {}, [], (resp) => {
       if (resp.code === 0) {
@@ -79,7 +86,7 @@ export default function Hosts() {
     if (open) {
       fetchInstallCommand()
     }
-  }, [open])
+  }, [open, canManageHosts])
 
   const handleCopy = async () => {
     if (!command) return
@@ -107,22 +114,6 @@ export default function Hosts() {
         toast.error("移除宿主机失败: " + resp.message)
       }
     })
-  }
-
-  const handleSetDefault = async (host: DomainHost) => {
-    if (!host.id) {
-      toast.error("宿主机信息不完整")
-      return
-    }
-
-    await apiRequest('v1UsersHostsUpdate', { is_default: true }, [host.id], (resp) => {
-      if (resp.code === 0) {
-        toast.success("设置成功")
-      } else {
-        toast.error("设置默认宿主机失败: " + resp.message)
-      }
-    })
-    reloadHosts?.()
   }
 
   const handleOpenRemarkDialog = (host: DomainHost) => {
@@ -204,10 +195,6 @@ export default function Hosts() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => handleSetDefault(host)} disabled={host.is_default}>
-                    <IconStar />
-                    设为默认
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleOpenRemarkDialog(host)} disabled={host.owner?.type !== ConstsOwnerType.OwnerTypePrivate}>
                     <IconPencil />
                     修改备注
@@ -261,10 +248,17 @@ export default function Hosts() {
               开发环境宿主机
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
-              用于在宿主机上创建开发环境
+              用于在宿主机上创建开发环境，当前能力仅对团队空间开放
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setOpen(true)}>绑定</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setOpen(true)}
+            disabled={!canManageHosts}
+          >
+            绑定
+          </Button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
           {loadingHosts ? loadHosts() : hosts.length === 0 ? noHosts() : listHosts()}
@@ -283,7 +277,7 @@ export default function Hosts() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <pre
-                  className="bg-muted p-4 rounded-md whitespace-pre-wrap break-words text-sm cursor-pointer hover:text-primary"
+                  className="bg-muted p-4 rounded-md whitespace-pre-wrap break-words text-sm cursor-pointer hover:text-success"
                   onClick={handleCopy}
                 >
                   <code className="code-font">{loadingCommand ? "正在生成安装命令..." : command}</code>

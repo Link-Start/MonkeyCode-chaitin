@@ -40,9 +40,12 @@ func (Task) Fields() []ent.Field {
 		field.String("kind").GoType(consts.TaskType("")),
 		field.String("sub_type").GoType(consts.TaskSubType("")).Optional(),
 		field.Text("content").NotEmpty(),
+		field.Text("title").Optional(),
 		field.Text("summary").Optional(),
 		field.String("status").GoType(consts.TaskStatus("")),
+		field.String("log_store").GoType(consts.LogStore("")).Optional().Nillable(),
 		field.Time("created_at").Default(time.Now),
+		field.Time("last_active_at").Default(time.Now),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
 		field.Time("completed_at").Optional(),
 	}
@@ -52,8 +55,10 @@ func (Task) Fields() []ent.Field {
 func (Task) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("project_tasks", ProjectTask.Type),
+		edge.To("git_tasks", GitTask.Type).Unique(),
 		edge.From("user", User.Type).Ref("tasks").Field("user_id").Unique().Required(),
 		edge.From("vms", VirtualMachine.Type).Through("task_vms", TaskVirtualMachine.Type).Ref("tasks"),
 		edge.To("git_bot_tasks", GitBotTask.Type),
+		edge.To("model_switches", TaskModelSwitch.Type),
 	}
 }

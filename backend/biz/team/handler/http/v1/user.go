@@ -25,6 +25,7 @@ type TeamGroupUserHandler struct {
 	auditMiddleware *middleware.AuditMiddleware
 	logger          *slog.Logger
 	captcha         *captcha.Captcha
+	memberManager   domain.MemberManager
 }
 
 // NewTeamGroupUserHandler 创建团队分组用户处理器 (samber/do 风格)
@@ -42,6 +43,7 @@ func NewTeamGroupUserHandler(i *do.Injector) (*TeamGroupUserHandler, error) {
 		auditMiddleware: audit,
 		logger:          logger.With("module", "handler.team_group_user"),
 		captcha:         do.MustInvoke[*captcha.Captcha](i),
+		memberManager:   do.MustInvoke[domain.MemberManager](i),
 	}
 
 	adminAuth := middleware.TeamAdminAuth(func(ctx context.Context, teamID, userID uuid.UUID) bool {
@@ -60,8 +62,10 @@ func NewTeamGroupUserHandler(i *do.Injector) (*TeamGroupUserHandler, error) {
 	u.POST("/logout", web.BaseHandler(h.Logout), auth.TeamAuthCheck())
 	u.GET("/status", web.BaseHandler(h.Status), auth.TeamAuthCheck())
 	u.PUT("/passwords/change", web.BindHandler(h.ChangePassword), auth.TeamAuth(), audit.Audit("change_team_user_password"))
+	u.POST("/with-password", web.BindHandler(h.AddUserWithPassword), auth.TeamAuth(), adminAuth, audit.Audit("add_team_user_with_password"))
 	u.POST("", web.BindHandler(h.AddUser), auth.TeamAuth(), adminAuth, audit.Audit("add_team_user"))
 	u.GET("", web.BindHandler(h.MemberList), auth.TeamAuth(), adminAuth)
+	u.PUT("/:user_id/passwords/reset", web.BindHandler(h.ResetPassword), auth.TeamAuth(), adminAuth, audit.Audit("reset_team_user_password"))
 	u.PUT("/:user_id", web.BindHandler(h.UpdateUser), auth.TeamAuth(), adminAuth, audit.Audit("update_team_user"))
 
 	g := w.Group("/api/v1/teams/groups")
@@ -173,6 +177,11 @@ func (h *TeamGroupUserHandler) Status(c *web.Context) error {
 //	@Router			/api/v1/teams/users/passwords/change [put]
 func (h *TeamGroupUserHandler) ChangePassword(c *web.Context, req domain.ChangePasswordReq) error {
 	teamUser := middleware.GetTeamUser(c)
+
+	if err := req.Validate(); err != nil {
+		return err
+	}
+
 	err := h.usecase.ChangePassword(c.Request().Context(), teamUser.User.ID, &req)
 	if err != nil {
 		return err
@@ -198,7 +207,29 @@ func (h *TeamGroupUserHandler) ChangePassword(c *web.Context, req domain.ChangeP
 //	@Router			/api/v1/teams/users [post]
 func (h *TeamGroupUserHandler) AddUser(c *web.Context, req domain.AddTeamUserReq) error {
 	teamUser := middleware.GetTeamUser(c)
-	resp, err := h.usecase.AddUser(c.Request().Context(), teamUser, &req)
+	resp, err := h.memberManager.AddUser(c.Request().Context(), teamUser, &req)
+	if err != nil {
+		return err
+	}
+	return c.Success(resp)
+}
+
+// AddUserWithPassword 创建团队成员并返回初始密码
+//
+//	@Summary		创建团队成员并返回初始密码
+//	@Description	创建团队成员，后端生成初始密码并只在响应中返回一次
+//	@Tags			【Team 管理员】分组成员管理
+//	@Accept			json
+//	@Produce		json
+//	@Security		MonkeyCodeAITeamAuth
+//	@Param			req	body		domain.AddTeamUserReq								true	"请求参数"
+//	@Success		200	{object}	web.Resp{data=domain.AddTeamUserWithPasswordResp}	"成功"
+//	@Failure		401	{object}	web.Resp											"未授权"
+//	@Failure		500	{object}	web.Resp											"服务器内部错误"
+//	@Router			/api/v1/teams/users/with-password [post]
+func (h *TeamGroupUserHandler) AddUserWithPassword(c *web.Context, req domain.AddTeamUserReq) error {
+	teamUser := middleware.GetTeamUser(c)
+	resp, err := h.memberManager.AddUserWithPassword(c.Request().Context(), teamUser, &req)
 	if err != nil {
 		return err
 	}
@@ -220,7 +251,29 @@ func (h *TeamGroupUserHandler) AddUser(c *web.Context, req domain.AddTeamUserReq
 //	@Router			/api/v1/teams/admin [post]
 func (h *TeamGroupUserHandler) AddAdmin(c *web.Context, req domain.AddTeamAdminReq) error {
 	teamUser := middleware.GetTeamUser(c)
-	resp, err := h.usecase.AddAdmin(c.Request().Context(), teamUser, &req)
+	resp, err := h.memberManager.AddAdmin(c.Request().Context(), teamUser, &req)
+	if err != nil {
+		return err
+	}
+	return c.Success(resp)
+}
+
+// ResetPassword 重置团队成员密码
+//
+//	@Summary		重置团队成员密码
+//	@Description	管理员为团队成员生成新密码，密码只在响应中返回一次
+//	@Tags			【Team 管理员】分组成员管理
+//	@Accept			json
+//	@Produce		json
+//	@Security		MonkeyCodeAITeamAuth
+//	@Param			user_id	path		string									true	"用户ID"
+//	@Success		200		{object}	web.Resp{data=domain.TeamUserPassword}	"成功"
+//	@Failure		401		{object}	web.Resp								"未授权"
+//	@Failure		500		{object}	web.Resp								"服务器内部错误"
+//	@Router			/api/v1/teams/users/{user_id}/passwords/reset [put]
+func (h *TeamGroupUserHandler) ResetPassword(c *web.Context, req domain.ResetPasswordReq) error {
+	teamUser := middleware.GetTeamUser(c)
+	resp, err := h.usecase.ResetPassword(c.Request().Context(), teamUser, &req)
 	if err != nil {
 		return err
 	}

@@ -55,6 +55,8 @@ const (
 	EdgeVms = "vms"
 	// EdgeTasks holds the string denoting the tasks edge name in mutations.
 	EdgeTasks = "tasks"
+	// EdgeTaskModelSwitches holds the string denoting the task_model_switches edge name in mutations.
+	EdgeTaskModelSwitches = "task_model_switches"
 	// EdgeGitIdentities holds the string denoting the git_identities edge name in mutations.
 	EdgeGitIdentities = "git_identities"
 	// EdgeProjects holds the string denoting the projects edge name in mutations.
@@ -69,6 +71,8 @@ const (
 	EdgeProjectIssueComments = "project_issue_comments"
 	// EdgeGitBots holds the string denoting the git_bots edge name in mutations.
 	EdgeGitBots = "git_bots"
+	// EdgeMcpUpstreams holds the string denoting the mcp_upstreams edge name in mutations.
+	EdgeMcpUpstreams = "mcp_upstreams"
 	// EdgeTeamMembers holds the string denoting the team_members edge name in mutations.
 	EdgeTeamMembers = "team_members"
 	// EdgeTeamGroupMembers holds the string denoting the team_group_members edge name in mutations.
@@ -136,6 +140,13 @@ const (
 	TasksInverseTable = "tasks"
 	// TasksColumn is the table column denoting the tasks relation/edge.
 	TasksColumn = "user_id"
+	// TaskModelSwitchesTable is the table that holds the task_model_switches relation/edge.
+	TaskModelSwitchesTable = "task_model_switches"
+	// TaskModelSwitchesInverseTable is the table name for the TaskModelSwitch entity.
+	// It exists in this package in order to avoid circular dependency with the "taskmodelswitch" package.
+	TaskModelSwitchesInverseTable = "task_model_switches"
+	// TaskModelSwitchesColumn is the table column denoting the task_model_switches relation/edge.
+	TaskModelSwitchesColumn = "user_id"
 	// GitIdentitiesTable is the table that holds the git_identities relation/edge.
 	GitIdentitiesTable = "git_identities"
 	// GitIdentitiesInverseTable is the table name for the GitIdentity entity.
@@ -183,6 +194,13 @@ const (
 	// GitBotsInverseTable is the table name for the GitBot entity.
 	// It exists in this package in order to avoid circular dependency with the "gitbot" package.
 	GitBotsInverseTable = "git_bots"
+	// McpUpstreamsTable is the table that holds the mcp_upstreams relation/edge.
+	McpUpstreamsTable = "mcp_upstreams"
+	// McpUpstreamsInverseTable is the table name for the MCPUpstream entity.
+	// It exists in this package in order to avoid circular dependency with the "mcpupstream" package.
+	McpUpstreamsInverseTable = "mcp_upstreams"
+	// McpUpstreamsColumn is the table column denoting the mcp_upstreams relation/edge.
+	McpUpstreamsColumn = "user_id"
 	// TeamMembersTable is the table that holds the team_members relation/edge.
 	TeamMembersTable = "team_members"
 	// TeamMembersInverseTable is the table name for the TeamMember entity.
@@ -448,6 +466,20 @@ func ByTasks(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByTaskModelSwitchesCount orders the results by task_model_switches count.
+func ByTaskModelSwitchesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newTaskModelSwitchesStep(), opts...)
+	}
+}
+
+// ByTaskModelSwitches orders the results by task_model_switches terms.
+func ByTaskModelSwitches(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTaskModelSwitchesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByGitIdentitiesCount orders the results by git_identities count.
 func ByGitIdentitiesCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -543,6 +575,20 @@ func ByGitBotsCount(opts ...sql.OrderTermOption) OrderOption {
 func ByGitBots(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
 		sqlgraph.OrderByNeighborTerms(s, newGitBotsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByMcpUpstreamsCount orders the results by mcp_upstreams count.
+func ByMcpUpstreamsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newMcpUpstreamsStep(), opts...)
+	}
+}
+
+// ByMcpUpstreams orders the results by mcp_upstreams terms.
+func ByMcpUpstreams(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newMcpUpstreamsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
 
@@ -650,6 +696,13 @@ func newTasksStep() *sqlgraph.Step {
 		sqlgraph.Edge(sqlgraph.O2M, false, TasksTable, TasksColumn),
 	)
 }
+func newTaskModelSwitchesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TaskModelSwitchesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, TaskModelSwitchesTable, TaskModelSwitchesColumn),
+	)
+}
 func newGitIdentitiesStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -697,6 +750,13 @@ func newGitBotsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GitBotsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2M, false, GitBotsTable, GitBotsPrimaryKey...),
+	)
+}
+func newMcpUpstreamsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(McpUpstreamsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, McpUpstreamsTable, McpUpstreamsColumn),
 	)
 }
 func newTeamMembersStep() *sqlgraph.Step {

@@ -21,6 +21,7 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/model"
 	"github.com/chaitin/MonkeyCode/backend/db/predicate"
 	"github.com/chaitin/MonkeyCode/backend/db/projecttask"
+	"github.com/chaitin/MonkeyCode/backend/db/taskvirtualmachine"
 	"github.com/chaitin/MonkeyCode/backend/db/teamgroup"
 	"github.com/chaitin/MonkeyCode/backend/db/user"
 	"github.com/chaitin/MonkeyCode/backend/db/virtualmachine"
@@ -110,14 +111,17 @@ func (h *HostRepo) UpsertVirtualMachine(ctx context.Context, vm *taskflow.Virtua
 			ForUpdate().
 			Where(virtualmachine.ID(vm.ID)).
 			First(ctx); err == nil {
-			if err := tx.VirtualMachine.UpdateOneID(vm.ID).
+			up := tx.VirtualMachine.UpdateOneID(vm.ID).
 				SetArch(vm.Arch).
 				SetCores(int(vm.Cores)).
 				SetHostname(vm.Hostname).
 				SetOs(vm.OS).
 				SetMemory(int64(vm.Memory)).
-				SetVersion(vm.Version).
-				Exec(ctx); err != nil {
+				SetVersion(vm.Version)
+			if vm.AccessToken != "" {
+				up.SetAccessToken(vm.AccessToken)
+			}
+			if err := up.Exec(ctx); err != nil {
 				return err
 			}
 			vm.EnvironmentID = oldVm.EnvironmentID
@@ -248,6 +252,17 @@ func (h *HostRepo) GetVirtualMachine(ctx context.Context, id string) (*db.Virtua
 	return vm, nil
 }
 
+func (h *HostRepo) GetVirtualMachineByAccessToken(ctx context.Context, accessToken string) (*db.VirtualMachine, error) {
+	return h.db.VirtualMachine.Query().
+		WithHost().
+		WithModel().
+		WithTasks().
+		WithUser().
+		WithGitIdentity().
+		Where(virtualmachine.AccessToken(accessToken)).
+		First(ctx)
+}
+
 // GetByID implements domain.HostRepo.
 func (h *HostRepo) GetByID(ctx context.Context, id string) (*db.Host, error) {
 	dbHost, err := h.db.Host.Query().
@@ -285,12 +300,19 @@ func (h *HostRepo) CreateVirtualMachine(ctx context.Context, u *domain.User, req
 	var res *domain.VirtualMachine
 	err := entx.WithTx2(ctx, h.db, func(tx *db.Tx) error {
 		dbHost, err := tx.Host.Query().
+			WithUser().
 			WithGroups().
 			Where(hostWithUserPredicate(u.ID)).
 			Where(host.ID(req.HostID)).
 			First(ctx)
 		if err != nil {
 			return errcode.ErrPermision.Wrap(err)
+		}
+
+		if u := dbHost.Edges.User; u != nil && u.Role == consts.UserRoleAdmin {
+			if req.Life > 3*60*60 || req.Life <= 0 {
+				return errcode.ErrPublicHostBeyondLimit
+			}
 		}
 
 		if len(dbHost.Edges.Groups) > 0 && (req.Life <= 0 || req.Life > 7*24*60*60) {
@@ -302,17 +324,7 @@ func (h *HostRepo) CreateVirtualMachine(ctx context.Context, u *domain.User, req
 			cnt, err := tx.VirtualMachine.Query().
 				Where(virtualmachine.UserID(u.ID)).
 				Where(virtualmachine.HasHostWith(host.HasUserWith(user.Role(consts.UserRoleAdmin)))).
-				Where(func(s *sql.Selector) {
-					s.Where(sql.P(func(b *sql.Builder) {
-						b.WriteString("NOW()").
-							WriteOp(sql.OpLT).
-							Ident(s.C(virtualmachine.FieldCreatedAt)).
-							WriteOp(sql.OpAdd).
-							WriteString("make_interval(secs => ").
-							Ident(s.C(virtualmachine.FieldTTL)).
-							WriteByte(')')
-					}))
-				}).
+				Where(virtualmachine.ExpiredAtGT(time.Now())).
 				Count(ctx)
 			if err != nil {
 				return errcode.ErrDatabaseOperation.Wrap(err)
@@ -383,9 +395,10 @@ func (h *HostRepo) CreateVirtualMachine(ctx context.Context, u *domain.User, req
 		}
 		res = vm
 
-		kind := consts.CountDown
-		if req.Life <= 0 {
-			kind = consts.Forever
+		var expiredAt *time.Time
+		if req.Life > 0 {
+			t := req.Now.Add(time.Duration(req.Life) * time.Second)
+			expiredAt = &t
 		}
 
 		crt := tx.VirtualMachine.Create().
@@ -394,14 +407,18 @@ func (h *HostRepo) CreateVirtualMachine(ctx context.Context, u *domain.User, req
 			SetEnvironmentID(vm.EnvironmentID).
 			SetName(vm.Name).
 			SetHostID(vm.Host.ID).
-			SetTTLKind(kind).
-			SetTTL(req.Life).
 			SetCores(req.Resource.CPU).
 			SetMemory(req.Resource.Memory).
 			SetRepoURL(repoURL).
 			SetRepoFilename(repoFilename).
 			SetBranch(branch).
 			SetCreatedAt(req.Now)
+		if expiredAt != nil {
+			crt.SetExpiredAt(*expiredAt)
+		}
+		if vm.AccessToken != "" {
+			crt.SetAccessToken(vm.AccessToken)
+		}
 
 		if len(req.ModelID) > 0 {
 			crt.SetModelID(m.ID)
@@ -438,6 +455,12 @@ func (h *HostRepo) DeleteVirtualMachine(ctx context.Context, uid uuid.UUID, host
 		}
 
 		if err := fn(vm); err != nil {
+			return err
+		}
+
+		if err := tx.VirtualMachine.UpdateOneID(vm.ID).
+			SetIsRecycled(true).
+			Exec(ctx); err != nil {
 			return err
 		}
 
@@ -515,16 +538,17 @@ func (h *HostRepo) UpdateHost(ctx context.Context, uid uuid.UUID, req *domain.Up
 // PastHourVirtualMachine implements domain.HostRepo.
 func (h *HostRepo) PastHourVirtualMachine(ctx context.Context) ([]*db.VirtualMachine, error) {
 	return h.db.VirtualMachine.Query().
-		Where(virtualmachine.TTLKind(consts.CountDown)).
+		Where(virtualmachine.ExpiredAtNotNil()).
 		Where(virtualmachine.IsRecycled(false)).
-		Where(virtualmachine.CreatedAtGTE(time.Now().Add(-24 * time.Hour))).
+		Where(virtualmachine.ExpiredAtLTE(time.Now().Add(24 * time.Hour))).
+		Where(virtualmachine.ExpiredAtGTE(time.Now().Add(-24 * time.Hour))).
 		All(ctx)
 }
 
 // AllCountDownVirtualMachine implements domain.HostRepo.
 func (h *HostRepo) AllCountDownVirtualMachine(ctx context.Context) ([]*db.VirtualMachine, error) {
 	return h.db.VirtualMachine.Query().
-		Where(virtualmachine.TTLKind(consts.CountDown)).
+		Where(virtualmachine.ExpiredAtNotNil()).
 		Where(virtualmachine.IsRecycled(false)).
 		All(ctx)
 }
@@ -545,30 +569,32 @@ func (h *HostRepo) UpdateVM(ctx context.Context, req domain.UpdateVMReq, fn func
 			return errcode.ErrDatabaseOperation.Wrap(err)
 		}
 
-		// 公共主机 TTL 续期上限（仅在配置了 TTLLimit 时生效）
+		// 公共主机过期时间续期上限（仅在配置了 TTLLimit 时生效）
 		if req.Life > 0 && h.cfg.PublicHost.TTLLimit > 0 {
 			if vm.Edges.Host != nil && vm.Edges.Host.Edges.User != nil &&
 				vm.Edges.Host.Edges.User.Role == consts.UserRoleAdmin {
 				now := time.Now()
-				expiredAt := vm.CreatedAt.Add(time.Duration(vm.TTL) * time.Second)
-				remaining := max(int64(expiredAt.Sub(now).Seconds()), 0)
+				remaining := int64(0)
+				if vm.ExpiredAt != nil {
+					remaining = max(int64(vm.ExpiredAt.Sub(now).Seconds()), 0)
+				}
 				maxAdditional := max(h.cfg.PublicHost.TTLLimit-remaining, 0)
 				actualLife = min(req.Life, maxAdditional)
 			}
 		}
 
 		res = vm
-		if vm.TTLKind == consts.Forever {
+		if vm.ExpiredAt == nil {
 			return nil
 		}
 
-		expiredAt := vm.CreatedAt.Add(time.Duration(vm.TTL) * time.Second)
-		if expiredAt.Before(time.Now()) {
+		if vm.ExpiredAt.Before(time.Now()) {
 			return errcode.ErrVMExpired
 		}
 
+		expiredAt := vm.ExpiredAt.Add(time.Duration(actualLife) * time.Second)
 		vm, err = tx.VirtualMachine.UpdateOneID(vm.ID).
-			AddTTL(actualLife).
+			SetExpiredAt(expiredAt).
 			Save(ctx)
 		if err != nil {
 			return errcode.ErrDatabaseOperation.Wrap(err)
@@ -585,6 +611,38 @@ func (h *HostRepo) GetVirtualMachineByEnvID(ctx context.Context, envID string) (
 		WithTasks().
 		Where(virtualmachine.EnvironmentID(envID)).
 		First(ctx)
+}
+
+// GetTaskIDByVMID implements domain.HostRepo.
+// 直接查 task_virtualmachines 关联表，避免 GetVirtualMachine + WithTasks 的整行 JOIN。
+// VM 未绑定任务时返回空字符串（不视为错误），调用方据此跳过推送。
+func (h *HostRepo) GetTaskIDByVMID(ctx context.Context, vmID string) (string, error) {
+	tm, err := h.db.TaskVirtualMachine.Query().
+		Where(taskvirtualmachine.VirtualmachineID(vmID)).
+		First(ctx)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return tm.TaskID.String(), nil
+}
+
+// BatchGetVmIDsByEnvironmentIDs 批量查询 environmentID -> vmID 映射
+func (h *HostRepo) BatchGetVmIDsByEnvironmentIDs(ctx context.Context, envIDs []string) (map[string]string, error) {
+	vms, err := h.db.VirtualMachine.Query().
+		Where(virtualmachine.EnvironmentIDIn(envIDs...)).
+		Select(virtualmachine.FieldID, virtualmachine.FieldEnvironmentID).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]string, len(vms))
+	for _, vm := range vms {
+		result[vm.EnvironmentID] = vm.ID
+	}
+	return result, nil
 }
 
 // GetGitCredentialByTask 通过 task_id 查询 git 凭证信息

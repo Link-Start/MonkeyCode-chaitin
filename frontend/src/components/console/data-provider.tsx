@@ -1,12 +1,14 @@
 import { ConstsGitPlatform, ConstsOwnerType, type DomainGitIdentity, type DomainHost, type DomainImage, type DomainModel, type DomainProject, type DomainProjectTask, type DomainSubscriptionResp, type DomainUser, type DomainVirtualMachine } from '@/api/Api';
+import { WechatMpBindDialog } from '@/components/console/wechat-mp-bind-dialog';
 import { getImageShortName } from '@/utils/common';
+import { IS_OFFLINE_EDITION } from '@/utils/edition';
 import { apiRequest } from '@/utils/requestUtils';
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 type CommonData = {
   user: DomainUser;
-  reloadUser: () => void;
+  reloadUser: () => Promise<DomainUser>;
 
   hosts: DomainHost[];
   vms: DomainVirtualMachine[];
@@ -27,8 +29,12 @@ type CommonData = {
   reloadIdentities: () => void;
 
   balance: number;
-  dailyBalance: number;
-  dailyRefreshedAt?: string;
+  dailyBasicTokenBalance: number;
+  dailyProTokenBalance: number;
+  dailyUltraTokenBalance: number;
+  checkedInToday: boolean | null;
+  loadingCheckinStatus: boolean;
+  reloadCheckinStatus: () => void;
   reloadWallet: () => void;
   subscription: DomainSubscriptionResp | null;
   loadingSubscription: boolean;
@@ -42,16 +48,23 @@ type CommonData = {
   loadingProjects: boolean;
   reloadProjects: () => void;
 
-  /** 未关联项目的任务（quick_start），用于侧边栏「默认」分组展示 */
+  /** 未关联项目的任务（quick_start），用于侧边栏「空项目」分组展示 */
   unlinkedTasks: DomainProjectTask[];
   loadingUnlinkedTasks: boolean;
   reloadUnlinkedTasks: () => void;
+
+  /** 最近任务，用于侧边栏「历史任务」分组展示 */
+  historicalTasks: DomainProjectTask[];
+  loadingHistoricalTasks: boolean;
+  reloadHistoricalTasks: () => void;
 };
 
 const DataContext = createContext<CommonData | null>(null);
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [userInfo, setUserInfo] = useState<DomainUser>({});
+  const [wechatMpBindDialogOpen, setWechatMpBindDialogOpen] = useState(false);
+  const checkedWechatMpBindRef = useRef(false);
 
   const [hosts, setHosts] = useState<DomainHost[]>([]);
   const [hostsInited, setHostsInited] = useState<boolean>(false);
@@ -67,8 +80,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loadingIdentities, setLoadingIdentities] = useState(true);
 
   const [balance, setBalance] = useState(0);
-  const [dailyBalance, setDailyBalance] = useState(0);
-  const [dailyRefreshedAt, setDailyRefreshedAt] = useState<string | undefined>(undefined);
+  const [dailyBasicTokenBalance, setDailyBasicTokenBalance] = useState(0);
+  const [dailyProTokenBalance, setDailyProTokenBalance] = useState(0);
+  const [dailyUltraTokenBalance, setDailyUltraTokenBalance] = useState(0);
+  const [checkedInToday, setCheckedInToday] = useState<boolean | null>(null);
+  const [loadingCheckinStatus, setLoadingCheckinStatus] = useState(true);
   const [subscription, setSubscription] = useState<DomainSubscriptionResp | null>(null);
   const [loadingSubscription, setLoadingSubscription] = useState(true);
   
@@ -80,11 +96,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [unlinkedTasks, setUnlinkedTasks] = useState<DomainProjectTask[]>([]);
   const [loadingUnlinkedTasks, setLoadingUnlinkedTasks] = useState(true);
+  const [historicalTasks, setHistoricalTasks] = useState<DomainProjectTask[]>([]);
+  const [loadingHistoricalTasks, setLoadingHistoricalTasks] = useState(true);
 
-  const fetchUserInfo = () => {
-    apiRequest('v1UsersStatusList', {}, [], (resp) => {
-      setUserInfo(resp.data?.user || {});
+  const fetchUserInfo = async () => {
+    let nextUser: DomainUser = {}
+    await apiRequest('v1UsersStatusList', {}, [], (resp) => {
+      nextUser = resp.data?.user || {}
+      setUserInfo(nextUser);
+      if (resp.code === 0 && !IS_OFFLINE_EDITION && !checkedWechatMpBindRef.current) {
+        checkedWechatMpBindRef.current = true;
+        setWechatMpBindDialogOpen(nextUser.wechat_mp_bound !== true);
+      }
     })
+    return nextUser
   }
 
   const fetchHosts = async () => {
@@ -141,7 +166,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoadingModels(true)
     await apiRequest('v1UsersModelsList', {}, [], (resp) => {
       if (resp.code === 0) {
-        const modelsList = resp.data?.models || [];
+        const modelsList = (resp.data?.models || []).filter((model: DomainModel) => (
+          model.is_hidden !== true
+        ));
         
         // 排序：先按 owner.type (private > team > public)，然后按名字
         const sortedModels = [...modelsList].sort((a, b) => {
@@ -232,19 +259,48 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, 500)
   }
 
-  const fetchWallet = () => {
+  const fetchWallet = useCallback(() => {
+    if (IS_OFFLINE_EDITION) {
+      return;
+    }
+
     apiRequest('v1UsersWalletList', {}, [], (resp) => {
       if (resp.code === 0) {
         setBalance((resp.data?.balance || 0) / 1000);
-        setDailyBalance((resp.data?.daily_balance || 0) / 1000);
-        setDailyRefreshedAt(resp.data?.daily_refreshed_at || undefined);
+        setDailyBasicTokenBalance(resp.data?.daily_basic_token_balance || 0);
+        setDailyProTokenBalance(resp.data?.daily_pro_token_balance || 0);
+        setDailyUltraTokenBalance(resp.data?.daily_ultra_token_balance || 0);
       } else {
         toast.error("获取余额失败: " + resp.message);
       }
     })
+  }, [])
+
+  const fetchCheckinStatus = async (showLoading = true) => {
+    if (showLoading) {
+      setLoadingCheckinStatus(true)
+    }
+
+    await apiRequest(
+      'v1UsersWalletCheckinList',
+      {},
+      [],
+      (resp) => {
+        setCheckedInToday(resp.data?.checked_in === true)
+        if (showLoading) {
+          setLoadingCheckinStatus(false)
+        }
+      },
+      () => {
+        setCheckedInToday(null)
+        if (showLoading) {
+          setLoadingCheckinStatus(false)
+        }
+      },
+    )
   }
 
-  const fetchSubscription = async (showLoading = true) => {
+  const fetchSubscription = useCallback(async (showLoading = true) => {
     if (showLoading) {
       setLoadingSubscription(true)
     }
@@ -262,7 +318,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (showLoading) {
       setLoadingSubscription(false)
     }
-  }
+  }, [])
 
   const fetchMembers = async () => {
     setLoadingMembers(true)
@@ -292,10 +348,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const UNLINKED_TASKS_LIMIT = 5
   const UNLINKED_TASKS_FETCH_SIZE = 50
+  const UNLINKED_TASKS_STATUS = "pending,processing"
+  const HISTORICAL_TASKS_LIMIT = 5
+  const HISTORICAL_TASKS_FETCH_SIZE = 50
+  const HISTORICAL_TASKS_STATUS = "error,finished"
 
   const fetchUnlinkedTasks = async () => {
     setLoadingUnlinkedTasks(true)
-    await apiRequest('v1UsersTasksList', { page: 1, size: UNLINKED_TASKS_FETCH_SIZE, quick_start: true }, [], (resp) => {
+    await apiRequest('v1UsersTasksList', { page: 1, size: UNLINKED_TASKS_FETCH_SIZE, quick_start: true, status: UNLINKED_TASKS_STATUS }, [], (resp) => {
       if (resp.code === 0) {
         const allTasks = resp.data?.tasks || []
         const unlinked = allTasks
@@ -307,6 +367,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, () => setLoadingUnlinkedTasks(false))
   }
 
+  const fetchHistoricalTasks = async () => {
+    setLoadingHistoricalTasks(true)
+    await apiRequest('v1UsersTasksList', { page: 1, size: HISTORICAL_TASKS_FETCH_SIZE, status: HISTORICAL_TASKS_STATUS }, [], (resp) => {
+      if (resp.code === 0) {
+        const allTasks = resp.data?.tasks || []
+        const recentTasks = allTasks
+          .sort((a: DomainProjectTask, b: DomainProjectTask) => (b.created_at || 0) - (a.created_at || 0))
+          .slice(0, HISTORICAL_TASKS_LIMIT)
+        setHistoricalTasks(recentTasks)
+      }
+      setLoadingHistoricalTasks(false)
+    }, () => setLoadingHistoricalTasks(false))
+  }
+
   useEffect(() => {
     fetchUserInfo();
     fetchHosts();
@@ -314,17 +388,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchImages();
     fetchIdentities();
     fetchWallet();
+    fetchCheckinStatus();
     fetchSubscription();
     fetchMembers();
     fetchProjects();
     fetchUnlinkedTasks();
+    fetchHistoricalTasks();
   }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       fetchWallet();
+      fetchCheckinStatus(false);
       fetchSubscription(false);
-    }, 60 * 1000);
+    }, 30 * 1000);
 
     return () => {
       window.clearInterval(timer);
@@ -332,7 +409,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <DataContext.Provider value={{
+    <>
+      <DataContext.Provider value={{
         user: userInfo,
         reloadUser: fetchUserInfo,
 
@@ -355,12 +433,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         reloadIdentities: fetchIdentities,
 
         balance: balance,
-        dailyBalance: dailyBalance,
-        dailyRefreshedAt: dailyRefreshedAt,
+        dailyBasicTokenBalance: dailyBasicTokenBalance,
+        dailyProTokenBalance: dailyProTokenBalance,
+        dailyUltraTokenBalance: dailyUltraTokenBalance,
+        checkedInToday: checkedInToday,
+        loadingCheckinStatus: loadingCheckinStatus,
+        reloadCheckinStatus: () => fetchCheckinStatus(),
         reloadWallet: fetchWallet,
         subscription: subscription,
         loadingSubscription: loadingSubscription,
-        reloadSubscription: () => fetchSubscription(),
+        reloadSubscription: fetchSubscription,
 
         members: members,
         loadingMembers: loadingMembers,
@@ -373,9 +455,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unlinkedTasks: unlinkedTasks,
         loadingUnlinkedTasks: loadingUnlinkedTasks,
         reloadUnlinkedTasks: fetchUnlinkedTasks,
-    }}>
-      {children}
-    </DataContext.Provider>
+
+        historicalTasks: historicalTasks,
+        loadingHistoricalTasks: loadingHistoricalTasks,
+        reloadHistoricalTasks: fetchHistoricalTasks,
+      }}>
+        {children}
+      </DataContext.Provider>
+      <WechatMpBindDialog
+        open={wechatMpBindDialogOpen}
+        onOpenChange={setWechatMpBindDialogOpen}
+      />
+    </>
   );
 };
 

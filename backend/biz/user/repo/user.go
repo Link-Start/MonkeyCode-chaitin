@@ -11,6 +11,7 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/config"
 	"github.com/chaitin/MonkeyCode/backend/consts"
 	"github.com/chaitin/MonkeyCode/backend/db"
+	"github.com/chaitin/MonkeyCode/backend/db/notifychannel"
 	"github.com/chaitin/MonkeyCode/backend/db/user"
 	"github.com/chaitin/MonkeyCode/backend/domain"
 	"github.com/chaitin/MonkeyCode/backend/errcode"
@@ -61,6 +62,18 @@ func (u *userRepo) GetUserWithTeams(ctx context.Context, userID uuid.UUID) (*db.
 		First(ctx)
 }
 
+// WechatMPBound implements domain.UserRepo.
+func (u *userRepo) WechatMPBound(ctx context.Context, uid uuid.UUID) (bool, error) {
+	return u.db.NotifyChannel.Query().
+		Where(
+			notifychannel.OwnerIDEQ(uid),
+			notifychannel.OwnerTypeEQ(consts.NotifyOwnerUser),
+			notifychannel.KindEQ(consts.NotifyChannelWechatMP),
+			notifychannel.EnabledEQ(true),
+		).
+		Exist(ctx)
+}
+
 // PasswordLogin implements domain.UserRepo.
 func (u *userRepo) PasswordLogin(ctx context.Context, req *domain.TeamLoginReq) (*db.User, error) {
 	usr, err := u.db.User.Query().
@@ -86,19 +99,19 @@ func (u *userRepo) PasswordLogin(ctx context.Context, req *domain.TeamLoginReq) 
 func (u *userRepo) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword string, isReset bool) error {
 	uu, err := u.db.User.Query().Where(user.IDEQ(userID)).First(ctx)
 	if err != nil {
-		return err
+		return errcode.ErrDatabaseQuery.Wrap(err)
 	}
 
 	if !isReset && uu.Password != "" {
 		err = crypto.VerifyPassword(uu.Password, currentPassword)
 		if err != nil {
-			return errcode.ErrInvalidPassword
+			return errcode.ErrInvalidPassword.Wrap(err)
 		}
 	}
 
 	hashedNewPassword, err := crypto.HashPassword(newPassword)
 	if err != nil {
-		return errcode.ErrLoginFailed
+		return errcode.ErrLoginFailed.Wrap(err)
 	}
 	err = u.db.User.UpdateOneID(userID).
 		SetPassword(hashedNewPassword).

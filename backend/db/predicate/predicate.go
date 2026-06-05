@@ -21,11 +21,23 @@ type GitBotUser func(*sql.Selector)
 // GitIdentity is the predicate function for gitidentity builders.
 type GitIdentity func(*sql.Selector)
 
+// GitTask is the predicate function for gittask builders.
+type GitTask func(*sql.Selector)
+
 // Host is the predicate function for host builders.
 type Host func(*sql.Selector)
 
 // Image is the predicate function for image builders.
 type Image func(*sql.Selector)
+
+// MCPTool is the predicate function for mcptool builders.
+type MCPTool func(*sql.Selector)
+
+// MCPUpstream is the predicate function for mcpupstream builders.
+type MCPUpstream func(*sql.Selector)
+
+// MCPUserToolSetting is the predicate function for mcpusertoolsetting builders.
+type MCPUserToolSetting func(*sql.Selector)
 
 // Model is the predicate function for model builders.
 type Model func(*sql.Selector)
@@ -65,6 +77,9 @@ type ProjectTask func(*sql.Selector)
 
 // Task is the predicate function for task builders.
 type Task func(*sql.Selector)
+
+// TaskModelSwitch is the predicate function for taskmodelswitch builders.
+type TaskModelSwitch func(*sql.Selector)
 
 // TaskUsageStat is the predicate function for taskusagestat builders.
 type TaskUsageStat func(*sql.Selector)

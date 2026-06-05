@@ -9,14 +9,12 @@ import { IconCircle, IconCircleCheck, IconLoader, IconPlayerStopFilled, IconSubt
 import { cn } from "@/lib/utils"
 import type { ConstsCliName } from "@/api/Api"
 import { TaskChatInputBox } from "./chat-inputbox"
-import { FileChangesDialog } from "./file-changes-dialog"
 import type {
   AvailableCommands,
   PlanEntry,
-  RepoFileChange,
   TaskPlan,
-  TaskRepositoryClient,
   TaskStreamStatus,
+  TaskUserInput,
 } from "./task-shared"
 
 export interface PlanStepsBlockProps {
@@ -26,11 +24,6 @@ export interface PlanStepsBlockProps {
 
 export function PlanStepsBlock({ plan, streamStatus }: PlanStepsBlockProps) {
   const [planOpened, setPlanOpened] = React.useState(false)
-
-  React.useEffect(() => {
-    if (!plan) return
-    setPlanOpened(plan.entries.some((entry: PlanEntry) => entry.status !== "completed"))
-  }, [plan])
 
   if (!plan || plan.entries.length === 0) return null
 
@@ -85,63 +78,15 @@ export function PlanStepsBlock({ plan, streamStatus }: PlanStepsBlockProps) {
           {planOpened ? <ChevronsDownUp className="size-4" /> : <ChevronsUpDown className="size-4" />}
         </Button>
       </div>
-      <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">{renderPlan()}</div>
-    </div>
-  )
-}
-
-export interface FileChangesPromptBlockProps {
-  fileChanges: string[]
-  fileChangesMap: Map<string, RepoFileChange>
-  taskManager: TaskRepositoryClient | null
-  sendUserInput: (content: string) => void
-  disabled: boolean
-  streamStatus: TaskStreamStatus
-}
-
-export function FileChangesPromptBlock({ fileChanges, fileChangesMap, taskManager, sendUserInput, disabled, streamStatus }: FileChangesPromptBlockProps) {
-  const [showPrompt, setShowPrompt] = React.useState(false)
-  const [dialogOpen, setDialogOpen] = React.useState(false)
-
-  React.useEffect(() => {
-    setShowPrompt(streamStatus === "waiting")
-  }, [streamStatus])
-
-  if (!showPrompt || disabled || fileChanges.length === 0) return null
-
-  return (
-    <>
-      <div className="flex flex-row px-3 py-2 border rounded-md items-center bg-muted/50 w-full shrink-0">
-        <div
-          className="flex-1 text-xs cursor-pointer hover:text-primary transition-colors"
-          onClick={() => setDialogOpen(true)}
-        >
-          {fileChanges.length} 个文件被修改，是否提交保存
-        </div>
-        <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setShowPrompt(false)}>
-          不急
-        </Button>
-        <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => sendUserInput("用 git 提交所有修改，并推送到远程仓库")}>
-          提交
-        </Button>
+      <div
+        className={cn(
+          "flex flex-col gap-2",
+          planOpened ? "max-h-48 overflow-y-auto overscroll-contain" : "overflow-hidden"
+        )}
+      >
+        {renderPlan()}
       </div>
-      <FileChangesDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        fileChanges={fileChanges}
-        fileChangesMap={fileChangesMap}
-        taskManager={taskManager}
-        onSubmit={(selectedFiles) => {
-          if (selectedFiles.length === fileChanges.length) {
-            sendUserInput("用 git 提交所有修改，并推送到远程仓库")
-          } else {
-            sendUserInput(`用 git 提交以下文件的修改，并推送到远程仓库:  \n${selectedFiles.map((file) => `- ${file}`).join('\n')}`)
-          }
-          setShowPrompt(false)
-        }}
-        onCancel={() => setShowPrompt(false)}
-      />
-    </>
+    </div>
   )
 }
 
@@ -155,13 +100,11 @@ interface TaskChatPanelProps {
   availableCommands: AvailableCommands | null
   sending: boolean
   queueSize: number
-  sendUserInput: (content: string) => void
+  sendUserInput: (input: TaskUserInput) => Promise<boolean> | boolean | void
   sendCancelCommand: () => void
-  sendResetSession: () => void
-  sendReloadSession: () => void
 }
 
-export const TaskChatPanel = ({ scrollContainerRef: externalScrollRef, inputPortalTargetRef, messages, cli, streamStatus, disabled, availableCommands, sending, sendUserInput, sendCancelCommand, sendResetSession, sendReloadSession, queueSize }: TaskChatPanelProps) => {
+export const TaskChatPanel = ({ scrollContainerRef: externalScrollRef, inputPortalTargetRef, messages, cli, streamStatus, disabled, availableCommands, sending, sendUserInput, sendCancelCommand, queueSize }: TaskChatPanelProps) => {
   const [timeCost, setTimeCost] = React.useState(0)
   const internalScrollRef = React.useRef<HTMLDivElement>(null)
   const scrollContainerRef = externalScrollRef ?? internalScrollRef
@@ -300,8 +243,6 @@ export const TaskChatPanel = ({ scrollContainerRef: externalScrollRef, inputPort
                 onSend={sendUserInput}
                 sending={sending}
                 queueSize={queueSize}
-                sendResetSession={sendResetSession}
-                sendReloadSession={sendReloadSession}
               />
             ),
             inputPortalTargetRef.current
@@ -318,8 +259,6 @@ export const TaskChatPanel = ({ scrollContainerRef: externalScrollRef, inputPort
               onSend={sendUserInput}
               sending={sending}
               queueSize={queueSize}
-              sendResetSession={sendResetSession}
-              sendReloadSession={sendReloadSession}
             />
           ))}
 

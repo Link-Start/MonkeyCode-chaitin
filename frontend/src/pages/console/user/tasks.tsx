@@ -11,16 +11,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { HoverCard, HoverCardTrigger } from "@/components/ui/hover-card";
-import { Item, ItemContent, ItemDescription, ItemFooter, ItemHeader, ItemTitle } from "@/components/ui/item";
+import { Item, ItemContent, ItemFooter, ItemHeader, ItemTitle } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TaskActionsDropdown } from "@/components/console/task/task-actions-dropdown";
 import { cn } from "@/lib/utils";
-import { formatTokens, getRepoNameFromUrl, renderHoverCardContent, stripMarkdown } from "@/utils/common";
+import { formatTokens, getModelDisplayNameForModel, getTaskDisplayName, renderHoverCardContent } from "@/utils/common";
 import { apiRequest } from "@/utils/requestUtils";
-import { IconAlertTriangle, IconCircleCheck, IconDotsVertical, IconPlayerStopFilled, IconTrash } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCircleCheck } from "@tabler/icons-react";
 import dayjs from "dayjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -32,7 +32,7 @@ const PAGE_SIZE = 24;
 export default function TasksPage() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { reloadProjects, reloadUnlinkedTasks } = useCommonData()
+  const { reloadProjects, reloadUnlinkedTasks, reloadHistoricalTasks } = useCommonData()
   const [tasks, setTasks] = useState<DomainProjectTask[]>([])
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
@@ -112,6 +112,17 @@ export default function TasksPage() {
     )
   }
 
+  const handleTaskRenamed = (taskId: string, title: string) => {
+    setTasks((prev) => prev.map((task) => (
+      task.id === taskId
+        ? { ...task, title }
+        : task
+    )))
+    reloadProjects()
+    reloadUnlinkedTasks()
+    reloadHistoricalTasks()
+  }
+
   const fetchTasks = useCallback((pageNum: number, append: boolean) => {
     if (loadingRef.current) return
     loadingRef.current = true
@@ -120,13 +131,14 @@ export default function TasksPage() {
       loadingRef.current = false
       setLoading(false)
     }
-    apiRequest('v1UsersTasksList', { page: pageNum, size: PAGE_SIZE, quick_start: true }, [], (resp) => {
+    apiRequest('v1UsersTasksList', { page: pageNum, size: PAGE_SIZE }, [], (resp) => {
       if (resp.code === 0) {
         const newTasks = resp.data?.tasks || []
         setTasks(prev => append ? [...prev, ...newTasks] : newTasks)
         setHasMore(newTasks.length >= PAGE_SIZE)
         setPage(pageNum)
       } else {
+        setHasMore(false)
         toast.error("获取任务列表失败: " + resp.message)
       }
       resetLoading()
@@ -186,11 +198,11 @@ export default function TasksPage() {
               <HoverCard>
                 <HoverCardTrigger asChild>
                   <ItemTitle className="font-normal whitespace-normal line-clamp-1 break-all hover:underline group-hover:text-primary cursor-pointer min-w-0 flex-1" onClick={() => navigate(`/console/task/${task.id}`)}>
-                    {task.summary || stripMarkdown(task.content)}
+                    {getTaskDisplayName(task)}
                   </ItemTitle>
                 </HoverCardTrigger>
                 {renderHoverCardContent([
-                  {title: "任务名称", content: task.summary || ""},
+                  {title: "任务名称", content: getTaskDisplayName(task)},
                   {title: "任务内容", content: task.content || ""},
                   {title: "任务状态", content: task.status || ""},
                   {title: "任务类型", content: `${task.type}/${task.sub_type}` || ""},
@@ -198,53 +210,42 @@ export default function TasksPage() {
                   task.repo_filename ? {title: "代码文件", content: task.repo_filename} : null,
                   task.repo_url ? {title: "仓库分支", content: task.branch || ""} : null,
                   {title: "开发工具", content: task.cli_name || ""},
-                  {title: "大模型", content: task.model?.model || ""},
+                  {title: "大模型", content: getModelDisplayNameForModel(task.model)},
                   {title: "创建时间", content: dayjs.unix(task.created_at as number).format("YYYY-MM-DD HH:mm:ss")},
                 ])}
               </HoverCard>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-5 shrink-0 text-muted-foreground/50 group-hover:text-primary hover:text-primary"
-                    onClick={(e) => e.preventDefault()}
-                  >
-                    <IconDotsVertical className="size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="py-1">
-                  {(task.status === ConstsTaskStatus.TaskStatusPending || task.status === ConstsTaskStatus.TaskStatusProcessing) && (
-                    <DropdownMenuItem
-                      onClick={() => setTaskToStop(task)}
-                      className="text-destructive focus:text-destructive text-xs py-1 px-1.5 [&_svg]:size-3"
-                    >
-                      <IconPlayerStopFilled className="mr-1" />
-                      终止
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    onClick={() => setTaskToDelete(task)}
-                    className="text-destructive focus:text-destructive text-xs py-1 px-1.5 [&_svg]:size-3"
-                  >
-                    <IconTrash className="mr-1" />
-                    删除
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <TaskActionsDropdown
+                task={task}
+                onStop={setTaskToStop}
+                onDelete={setTaskToDelete}
+                onRenameSuccess={(title) => handleTaskRenamed(task.id || "", title)}
+                stopLabel="终止"
+                deleteLabel="删除"
+                triggerClassName="text-muted-foreground/50 group-hover:text-primary hover:text-primary"
+              />
             </ItemHeader>
-            <ItemDescription className="whitespace-normal line-clamp-1 break-all">
-              {getRepoNameFromUrl(task?.repo_url || '') || task.repo_filename || '-'}
-            </ItemDescription>
           </ItemContent>
           <ItemFooter className="flex flex-row gap-2 justify-between border-t pt-3 text-xs text-muted-foreground">
             <div className="flex flex-row gap-2">
-              <Badge variant="outline" className={cn(task.status === "processing" || task.status === "pending" ? "" : "text-muted-foreground")} >
-                {task.status === "finished" && <><IconCircleCheck />任务完成</>}
-                {task.status === "error" && <><IconAlertTriangle />执行失败</>}
-                {task.status === "pending" && <><Spinner />等待执行</>}
-                {task.status === "processing" && <><Spinner />正在执行</>}
-              </Badge>
+              {task.status === "finished" ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex">
+                      <Badge variant="outline" className="text-muted-foreground">
+                        <IconCircleCheck />
+                        已终止
+                      </Badge>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>连续三天不对话的任务将自动回收</TooltipContent>
+                </Tooltip>
+              ) : (
+                <Badge variant="outline" className={cn(task.status === "processing" || task.status === "pending" ? "" : "text-muted-foreground")} >
+                  {task.status === "error" && <><IconAlertTriangle />启动失败</>}
+                  {task.status === "pending" && <><Spinner />正在启动</>}
+                  {task.status === "processing" && <><Spinner />运行中</>}
+                </Badge>
+              )}
               {task.stats?.total_tokens ? (
                 <Badge variant="outline" className="text-muted-foreground">
                   {formatTokens(task.stats.total_tokens)} tokens
@@ -266,7 +267,7 @@ export default function TasksPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除任务</AlertDialogTitle>
             <AlertDialogDescription>
-              确定要删除任务「{taskToDelete ? (taskToDelete.summary || stripMarkdown(taskToDelete.content || "")) : ""}」吗？此操作不可撤销。
+              确定要删除任务「{getTaskDisplayName(taskToDelete)}」吗？此操作不可撤销。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -286,12 +287,12 @@ export default function TasksPage() {
       </AlertDialog>
       <AlertDialog open={!!taskToStop} onOpenChange={(open) => !open && setTaskToStop(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认终止任务</AlertDialogTitle>
-            <AlertDialogDescription>
-              确定要终止任务「{taskToStop ? (taskToStop.summary || stripMarkdown(taskToStop.content || "")) : ""}」吗？
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认终止任务</AlertDialogTitle>
+              <AlertDialogDescription>
+                确定要终止任务「{getTaskDisplayName(taskToStop)}」吗？任务终止后无法恢复。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={stopping}>取消</AlertDialogCancel>
             <AlertDialogAction

@@ -17,8 +17,12 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/gitbottask"
 	"github.com/chaitin/MonkeyCode/backend/db/gitbotuser"
 	"github.com/chaitin/MonkeyCode/backend/db/gitidentity"
+	"github.com/chaitin/MonkeyCode/backend/db/gittask"
 	"github.com/chaitin/MonkeyCode/backend/db/host"
 	"github.com/chaitin/MonkeyCode/backend/db/image"
+	"github.com/chaitin/MonkeyCode/backend/db/mcptool"
+	"github.com/chaitin/MonkeyCode/backend/db/mcpupstream"
+	"github.com/chaitin/MonkeyCode/backend/db/mcpusertoolsetting"
 	"github.com/chaitin/MonkeyCode/backend/db/model"
 	"github.com/chaitin/MonkeyCode/backend/db/modelapikey"
 	"github.com/chaitin/MonkeyCode/backend/db/modelpricing"
@@ -32,6 +36,7 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/projectissuecomment"
 	"github.com/chaitin/MonkeyCode/backend/db/projecttask"
 	"github.com/chaitin/MonkeyCode/backend/db/task"
+	"github.com/chaitin/MonkeyCode/backend/db/taskmodelswitch"
 	"github.com/chaitin/MonkeyCode/backend/db/taskusagestat"
 	"github.com/chaitin/MonkeyCode/backend/db/taskvirtualmachine"
 	"github.com/chaitin/MonkeyCode/backend/db/team"
@@ -112,8 +117,12 @@ func checkColumn(t, c string) error {
 			gitbottask.Table:          gitbottask.ValidColumn,
 			gitbotuser.Table:          gitbotuser.ValidColumn,
 			gitidentity.Table:         gitidentity.ValidColumn,
+			gittask.Table:             gittask.ValidColumn,
 			host.Table:                host.ValidColumn,
 			image.Table:               image.ValidColumn,
+			mcptool.Table:             mcptool.ValidColumn,
+			mcpupstream.Table:         mcpupstream.ValidColumn,
+			mcpusertoolsetting.Table:  mcpusertoolsetting.ValidColumn,
 			model.Table:               model.ValidColumn,
 			modelapikey.Table:         modelapikey.ValidColumn,
 			modelpricing.Table:        modelpricing.ValidColumn,
@@ -127,6 +136,7 @@ func checkColumn(t, c string) error {
 			projectissuecomment.Table: projectissuecomment.ValidColumn,
 			projecttask.Table:         projecttask.ValidColumn,
 			task.Table:                task.ValidColumn,
+			taskmodelswitch.Table:     taskmodelswitch.ValidColumn,
 			taskusagestat.Table:       taskusagestat.ValidColumn,
 			taskvirtualmachine.Table:  taskvirtualmachine.ValidColumn,
 			team.Table:                team.ValidColumn,

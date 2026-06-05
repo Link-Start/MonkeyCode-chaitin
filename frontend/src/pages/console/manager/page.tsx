@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import { RefreshCw } from "lucide-react"
 import ManagerSidebar from "@/components/manager/manager-sidebar"
 import { Fragment } from "react/jsx-runtime"
+import { ModeToggle } from "@/components/mode-toggle"
 
 export default function ManagerConsolePage() {
   const location = useLocation()
@@ -25,8 +26,8 @@ export default function ManagerConsolePage() {
     string,
     { label: string; href?: string }[]
   > = {
-    "/manager/dashboard": [
-      { label: "仪表盘", href: "/manager/dashboard" },
+    "/manager/overview": [
+      { label: "概览", href: "/manager/overview" },
     ],
     "/manager/members": [
       { label: "成员管理", href: "/manager/members" },
@@ -42,9 +43,6 @@ export default function ManagerConsolePage() {
     ],
     "/manager/logs": [
       { label: "操作记录", href: "/manager/logs" },
-    ],
-    "/manager/other-settings": [
-      { label: "其他配置", href: "/manager/other-settings" },
     ],
   }
   
@@ -106,7 +104,7 @@ export default function ManagerConsolePage() {
               <RefreshCw className="h-[1.2rem] w-[1.2rem]" />
               刷新
             </Button>
-            {/*<ModeToggle />*/}
+            <ModeToggle />
           </div>
         </header>
         <div className="flex flex-1 flex-col gap-4 p-4 pt-0">

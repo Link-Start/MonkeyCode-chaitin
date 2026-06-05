@@ -16,6 +16,7 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/modelapikey"
 	"github.com/chaitin/MonkeyCode/backend/db/modelpricing"
 	"github.com/chaitin/MonkeyCode/backend/db/projecttask"
+	"github.com/chaitin/MonkeyCode/backend/db/taskmodelswitch"
 	"github.com/chaitin/MonkeyCode/backend/db/team"
 	"github.com/chaitin/MonkeyCode/backend/db/teamgroup"
 	"github.com/chaitin/MonkeyCode/backend/db/teamgroupmodel"
@@ -129,6 +130,76 @@ func (_c *ModelCreate) SetWeight(v int) *ModelCreate {
 func (_c *ModelCreate) SetNillableWeight(v *int) *ModelCreate {
 	if v != nil {
 		_c.SetWeight(*v)
+	}
+	return _c
+}
+
+// SetThinkingEnabled sets the "thinking_enabled" field.
+func (_c *ModelCreate) SetThinkingEnabled(v bool) *ModelCreate {
+	_c.mutation.SetThinkingEnabled(v)
+	return _c
+}
+
+// SetNillableThinkingEnabled sets the "thinking_enabled" field if the given value is not nil.
+func (_c *ModelCreate) SetNillableThinkingEnabled(v *bool) *ModelCreate {
+	if v != nil {
+		_c.SetThinkingEnabled(*v)
+	}
+	return _c
+}
+
+// SetSupportImage sets the "support_image" field.
+func (_c *ModelCreate) SetSupportImage(v bool) *ModelCreate {
+	_c.mutation.SetSupportImage(v)
+	return _c
+}
+
+// SetNillableSupportImage sets the "support_image" field if the given value is not nil.
+func (_c *ModelCreate) SetNillableSupportImage(v *bool) *ModelCreate {
+	if v != nil {
+		_c.SetSupportImage(*v)
+	}
+	return _c
+}
+
+// SetIsHidden sets the "is_hidden" field.
+func (_c *ModelCreate) SetIsHidden(v bool) *ModelCreate {
+	_c.mutation.SetIsHidden(v)
+	return _c
+}
+
+// SetNillableIsHidden sets the "is_hidden" field if the given value is not nil.
+func (_c *ModelCreate) SetNillableIsHidden(v *bool) *ModelCreate {
+	if v != nil {
+		_c.SetIsHidden(*v)
+	}
+	return _c
+}
+
+// SetContextLimit sets the "context_limit" field.
+func (_c *ModelCreate) SetContextLimit(v int) *ModelCreate {
+	_c.mutation.SetContextLimit(v)
+	return _c
+}
+
+// SetNillableContextLimit sets the "context_limit" field if the given value is not nil.
+func (_c *ModelCreate) SetNillableContextLimit(v *int) *ModelCreate {
+	if v != nil {
+		_c.SetContextLimit(*v)
+	}
+	return _c
+}
+
+// SetOutputLimit sets the "output_limit" field.
+func (_c *ModelCreate) SetOutputLimit(v int) *ModelCreate {
+	_c.mutation.SetOutputLimit(v)
+	return _c
+}
+
+// SetNillableOutputLimit sets the "output_limit" field if the given value is not nil.
+func (_c *ModelCreate) SetNillableOutputLimit(v *int) *ModelCreate {
+	if v != nil {
+		_c.SetOutputLimit(*v)
 	}
 	return _c
 }
@@ -308,6 +379,36 @@ func (_c *ModelCreate) AddApikeys(v ...*ModelApiKey) *ModelCreate {
 	return _c.AddApikeyIDs(ids...)
 }
 
+// AddSwitchesFromIDs adds the "switches_from" edge to the TaskModelSwitch entity by IDs.
+func (_c *ModelCreate) AddSwitchesFromIDs(ids ...uuid.UUID) *ModelCreate {
+	_c.mutation.AddSwitchesFromIDs(ids...)
+	return _c
+}
+
+// AddSwitchesFrom adds the "switches_from" edges to the TaskModelSwitch entity.
+func (_c *ModelCreate) AddSwitchesFrom(v ...*TaskModelSwitch) *ModelCreate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddSwitchesFromIDs(ids...)
+}
+
+// AddSwitchesToIDs adds the "switches_to" edge to the TaskModelSwitch entity by IDs.
+func (_c *ModelCreate) AddSwitchesToIDs(ids ...uuid.UUID) *ModelCreate {
+	_c.mutation.AddSwitchesToIDs(ids...)
+	return _c
+}
+
+// AddSwitchesTo adds the "switches_to" edges to the TaskModelSwitch entity.
+func (_c *ModelCreate) AddSwitchesTo(v ...*TaskModelSwitch) *ModelCreate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddSwitchesToIDs(ids...)
+}
+
 // AddTeamModelIDs adds the "team_models" edge to the TeamModel entity by IDs.
 func (_c *ModelCreate) AddTeamModelIDs(ids ...uuid.UUID) *ModelCreate {
 	_c.mutation.AddTeamModelIDs(ids...)
@@ -379,6 +480,26 @@ func (_c *ModelCreate) defaults() error {
 		v := model.DefaultWeight
 		_c.mutation.SetWeight(v)
 	}
+	if _, ok := _c.mutation.ThinkingEnabled(); !ok {
+		v := model.DefaultThinkingEnabled
+		_c.mutation.SetThinkingEnabled(v)
+	}
+	if _, ok := _c.mutation.SupportImage(); !ok {
+		v := model.DefaultSupportImage
+		_c.mutation.SetSupportImage(v)
+	}
+	if _, ok := _c.mutation.IsHidden(); !ok {
+		v := model.DefaultIsHidden
+		_c.mutation.SetIsHidden(v)
+	}
+	if _, ok := _c.mutation.ContextLimit(); !ok {
+		v := model.DefaultContextLimit
+		_c.mutation.SetContextLimit(v)
+	}
+	if _, ok := _c.mutation.OutputLimit(); !ok {
+		v := model.DefaultOutputLimit
+		_c.mutation.SetOutputLimit(v)
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		if model.DefaultCreatedAt == nil {
 			return fmt.Errorf("db: uninitialized model.DefaultCreatedAt (forgotten import db/runtime?)")
@@ -435,6 +556,21 @@ func (_c *ModelCreate) check() error {
 	}
 	if _, ok := _c.mutation.Weight(); !ok {
 		return &ValidationError{Name: "weight", err: errors.New(`db: missing required field "Model.weight"`)}
+	}
+	if _, ok := _c.mutation.ThinkingEnabled(); !ok {
+		return &ValidationError{Name: "thinking_enabled", err: errors.New(`db: missing required field "Model.thinking_enabled"`)}
+	}
+	if _, ok := _c.mutation.SupportImage(); !ok {
+		return &ValidationError{Name: "support_image", err: errors.New(`db: missing required field "Model.support_image"`)}
+	}
+	if _, ok := _c.mutation.IsHidden(); !ok {
+		return &ValidationError{Name: "is_hidden", err: errors.New(`db: missing required field "Model.is_hidden"`)}
+	}
+	if _, ok := _c.mutation.ContextLimit(); !ok {
+		return &ValidationError{Name: "context_limit", err: errors.New(`db: missing required field "Model.context_limit"`)}
+	}
+	if _, ok := _c.mutation.OutputLimit(); !ok {
+		return &ValidationError{Name: "output_limit", err: errors.New(`db: missing required field "Model.output_limit"`)}
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`db: missing required field "Model.created_at"`)}
@@ -516,6 +652,26 @@ func (_c *ModelCreate) createSpec() (*Model, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Weight(); ok {
 		_spec.SetField(model.FieldWeight, field.TypeInt, value)
 		_node.Weight = value
+	}
+	if value, ok := _c.mutation.ThinkingEnabled(); ok {
+		_spec.SetField(model.FieldThinkingEnabled, field.TypeBool, value)
+		_node.ThinkingEnabled = value
+	}
+	if value, ok := _c.mutation.SupportImage(); ok {
+		_spec.SetField(model.FieldSupportImage, field.TypeBool, value)
+		_node.SupportImage = value
+	}
+	if value, ok := _c.mutation.IsHidden(); ok {
+		_spec.SetField(model.FieldIsHidden, field.TypeBool, value)
+		_node.IsHidden = value
+	}
+	if value, ok := _c.mutation.ContextLimit(); ok {
+		_spec.SetField(model.FieldContextLimit, field.TypeInt, value)
+		_node.ContextLimit = value
+	}
+	if value, ok := _c.mutation.OutputLimit(); ok {
+		_spec.SetField(model.FieldOutputLimit, field.TypeInt, value)
+		_node.OutputLimit = value
 	}
 	if value, ok := _c.mutation.LastCheckAt(); ok {
 		_spec.SetField(model.FieldLastCheckAt, field.TypeTime, value)
@@ -651,6 +807,38 @@ func (_c *ModelCreate) createSpec() (*Model, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(modelapikey.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.SwitchesFromIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   model.SwitchesFromTable,
+			Columns: []string{model.SwitchesFromColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.SwitchesToIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   model.SwitchesToTable,
+			Columns: []string{model.SwitchesToColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {
@@ -895,6 +1083,78 @@ func (u *ModelUpsert) UpdateWeight() *ModelUpsert {
 // AddWeight adds v to the "weight" field.
 func (u *ModelUpsert) AddWeight(v int) *ModelUpsert {
 	u.Add(model.FieldWeight, v)
+	return u
+}
+
+// SetThinkingEnabled sets the "thinking_enabled" field.
+func (u *ModelUpsert) SetThinkingEnabled(v bool) *ModelUpsert {
+	u.Set(model.FieldThinkingEnabled, v)
+	return u
+}
+
+// UpdateThinkingEnabled sets the "thinking_enabled" field to the value that was provided on create.
+func (u *ModelUpsert) UpdateThinkingEnabled() *ModelUpsert {
+	u.SetExcluded(model.FieldThinkingEnabled)
+	return u
+}
+
+// SetSupportImage sets the "support_image" field.
+func (u *ModelUpsert) SetSupportImage(v bool) *ModelUpsert {
+	u.Set(model.FieldSupportImage, v)
+	return u
+}
+
+// UpdateSupportImage sets the "support_image" field to the value that was provided on create.
+func (u *ModelUpsert) UpdateSupportImage() *ModelUpsert {
+	u.SetExcluded(model.FieldSupportImage)
+	return u
+}
+
+// SetIsHidden sets the "is_hidden" field.
+func (u *ModelUpsert) SetIsHidden(v bool) *ModelUpsert {
+	u.Set(model.FieldIsHidden, v)
+	return u
+}
+
+// UpdateIsHidden sets the "is_hidden" field to the value that was provided on create.
+func (u *ModelUpsert) UpdateIsHidden() *ModelUpsert {
+	u.SetExcluded(model.FieldIsHidden)
+	return u
+}
+
+// SetContextLimit sets the "context_limit" field.
+func (u *ModelUpsert) SetContextLimit(v int) *ModelUpsert {
+	u.Set(model.FieldContextLimit, v)
+	return u
+}
+
+// UpdateContextLimit sets the "context_limit" field to the value that was provided on create.
+func (u *ModelUpsert) UpdateContextLimit() *ModelUpsert {
+	u.SetExcluded(model.FieldContextLimit)
+	return u
+}
+
+// AddContextLimit adds v to the "context_limit" field.
+func (u *ModelUpsert) AddContextLimit(v int) *ModelUpsert {
+	u.Add(model.FieldContextLimit, v)
+	return u
+}
+
+// SetOutputLimit sets the "output_limit" field.
+func (u *ModelUpsert) SetOutputLimit(v int) *ModelUpsert {
+	u.Set(model.FieldOutputLimit, v)
+	return u
+}
+
+// UpdateOutputLimit sets the "output_limit" field to the value that was provided on create.
+func (u *ModelUpsert) UpdateOutputLimit() *ModelUpsert {
+	u.SetExcluded(model.FieldOutputLimit)
+	return u
+}
+
+// AddOutputLimit adds v to the "output_limit" field.
+func (u *ModelUpsert) AddOutputLimit(v int) *ModelUpsert {
+	u.Add(model.FieldOutputLimit, v)
 	return u
 }
 
@@ -1203,6 +1463,90 @@ func (u *ModelUpsertOne) AddWeight(v int) *ModelUpsertOne {
 func (u *ModelUpsertOne) UpdateWeight() *ModelUpsertOne {
 	return u.Update(func(s *ModelUpsert) {
 		s.UpdateWeight()
+	})
+}
+
+// SetThinkingEnabled sets the "thinking_enabled" field.
+func (u *ModelUpsertOne) SetThinkingEnabled(v bool) *ModelUpsertOne {
+	return u.Update(func(s *ModelUpsert) {
+		s.SetThinkingEnabled(v)
+	})
+}
+
+// UpdateThinkingEnabled sets the "thinking_enabled" field to the value that was provided on create.
+func (u *ModelUpsertOne) UpdateThinkingEnabled() *ModelUpsertOne {
+	return u.Update(func(s *ModelUpsert) {
+		s.UpdateThinkingEnabled()
+	})
+}
+
+// SetSupportImage sets the "support_image" field.
+func (u *ModelUpsertOne) SetSupportImage(v bool) *ModelUpsertOne {
+	return u.Update(func(s *ModelUpsert) {
+		s.SetSupportImage(v)
+	})
+}
+
+// UpdateSupportImage sets the "support_image" field to the value that was provided on create.
+func (u *ModelUpsertOne) UpdateSupportImage() *ModelUpsertOne {
+	return u.Update(func(s *ModelUpsert) {
+		s.UpdateSupportImage()
+	})
+}
+
+// SetIsHidden sets the "is_hidden" field.
+func (u *ModelUpsertOne) SetIsHidden(v bool) *ModelUpsertOne {
+	return u.Update(func(s *ModelUpsert) {
+		s.SetIsHidden(v)
+	})
+}
+
+// UpdateIsHidden sets the "is_hidden" field to the value that was provided on create.
+func (u *ModelUpsertOne) UpdateIsHidden() *ModelUpsertOne {
+	return u.Update(func(s *ModelUpsert) {
+		s.UpdateIsHidden()
+	})
+}
+
+// SetContextLimit sets the "context_limit" field.
+func (u *ModelUpsertOne) SetContextLimit(v int) *ModelUpsertOne {
+	return u.Update(func(s *ModelUpsert) {
+		s.SetContextLimit(v)
+	})
+}
+
+// AddContextLimit adds v to the "context_limit" field.
+func (u *ModelUpsertOne) AddContextLimit(v int) *ModelUpsertOne {
+	return u.Update(func(s *ModelUpsert) {
+		s.AddContextLimit(v)
+	})
+}
+
+// UpdateContextLimit sets the "context_limit" field to the value that was provided on create.
+func (u *ModelUpsertOne) UpdateContextLimit() *ModelUpsertOne {
+	return u.Update(func(s *ModelUpsert) {
+		s.UpdateContextLimit()
+	})
+}
+
+// SetOutputLimit sets the "output_limit" field.
+func (u *ModelUpsertOne) SetOutputLimit(v int) *ModelUpsertOne {
+	return u.Update(func(s *ModelUpsert) {
+		s.SetOutputLimit(v)
+	})
+}
+
+// AddOutputLimit adds v to the "output_limit" field.
+func (u *ModelUpsertOne) AddOutputLimit(v int) *ModelUpsertOne {
+	return u.Update(func(s *ModelUpsert) {
+		s.AddOutputLimit(v)
+	})
+}
+
+// UpdateOutputLimit sets the "output_limit" field to the value that was provided on create.
+func (u *ModelUpsertOne) UpdateOutputLimit() *ModelUpsertOne {
+	return u.Update(func(s *ModelUpsert) {
+		s.UpdateOutputLimit()
 	})
 }
 
@@ -1691,6 +2035,90 @@ func (u *ModelUpsertBulk) AddWeight(v int) *ModelUpsertBulk {
 func (u *ModelUpsertBulk) UpdateWeight() *ModelUpsertBulk {
 	return u.Update(func(s *ModelUpsert) {
 		s.UpdateWeight()
+	})
+}
+
+// SetThinkingEnabled sets the "thinking_enabled" field.
+func (u *ModelUpsertBulk) SetThinkingEnabled(v bool) *ModelUpsertBulk {
+	return u.Update(func(s *ModelUpsert) {
+		s.SetThinkingEnabled(v)
+	})
+}
+
+// UpdateThinkingEnabled sets the "thinking_enabled" field to the value that was provided on create.
+func (u *ModelUpsertBulk) UpdateThinkingEnabled() *ModelUpsertBulk {
+	return u.Update(func(s *ModelUpsert) {
+		s.UpdateThinkingEnabled()
+	})
+}
+
+// SetSupportImage sets the "support_image" field.
+func (u *ModelUpsertBulk) SetSupportImage(v bool) *ModelUpsertBulk {
+	return u.Update(func(s *ModelUpsert) {
+		s.SetSupportImage(v)
+	})
+}
+
+// UpdateSupportImage sets the "support_image" field to the value that was provided on create.
+func (u *ModelUpsertBulk) UpdateSupportImage() *ModelUpsertBulk {
+	return u.Update(func(s *ModelUpsert) {
+		s.UpdateSupportImage()
+	})
+}
+
+// SetIsHidden sets the "is_hidden" field.
+func (u *ModelUpsertBulk) SetIsHidden(v bool) *ModelUpsertBulk {
+	return u.Update(func(s *ModelUpsert) {
+		s.SetIsHidden(v)
+	})
+}
+
+// UpdateIsHidden sets the "is_hidden" field to the value that was provided on create.
+func (u *ModelUpsertBulk) UpdateIsHidden() *ModelUpsertBulk {
+	return u.Update(func(s *ModelUpsert) {
+		s.UpdateIsHidden()
+	})
+}
+
+// SetContextLimit sets the "context_limit" field.
+func (u *ModelUpsertBulk) SetContextLimit(v int) *ModelUpsertBulk {
+	return u.Update(func(s *ModelUpsert) {
+		s.SetContextLimit(v)
+	})
+}
+
+// AddContextLimit adds v to the "context_limit" field.
+func (u *ModelUpsertBulk) AddContextLimit(v int) *ModelUpsertBulk {
+	return u.Update(func(s *ModelUpsert) {
+		s.AddContextLimit(v)
+	})
+}
+
+// UpdateContextLimit sets the "context_limit" field to the value that was provided on create.
+func (u *ModelUpsertBulk) UpdateContextLimit() *ModelUpsertBulk {
+	return u.Update(func(s *ModelUpsert) {
+		s.UpdateContextLimit()
+	})
+}
+
+// SetOutputLimit sets the "output_limit" field.
+func (u *ModelUpsertBulk) SetOutputLimit(v int) *ModelUpsertBulk {
+	return u.Update(func(s *ModelUpsert) {
+		s.SetOutputLimit(v)
+	})
+}
+
+// AddOutputLimit adds v to the "output_limit" field.
+func (u *ModelUpsertBulk) AddOutputLimit(v int) *ModelUpsertBulk {
+	return u.Update(func(s *ModelUpsert) {
+		s.AddOutputLimit(v)
+	})
+}
+
+// UpdateOutputLimit sets the "output_limit" field to the value that was provided on create.
+func (u *ModelUpsertBulk) UpdateOutputLimit() *ModelUpsertBulk {
+	return u.Update(func(s *ModelUpsert) {
+		s.UpdateOutputLimit()
 	})
 }
 

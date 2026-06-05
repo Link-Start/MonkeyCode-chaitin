@@ -1,10 +1,12 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/spf13/viper"
 
+	"github.com/chaitin/MonkeyCode/backend/consts"
 	"github.com/chaitin/MonkeyCode/backend/pkg/logger"
 )
 
@@ -43,14 +45,20 @@ type Config struct {
 	AdminToken string        `mapstructure:"admin_token"`
 	Proxies    []string      `mapstructure:"proxies"`
 
-	TaskFlow    TaskFlow    `mapstructure:"taskflow"`
-	PublicHost  PublicHost  `mapstructure:"public_host"`
-	Task        Task        `mapstructure:"task"`
-	TaskSummary TaskSummary `mapstructure:"task_summary"`
-	Loki        Loki        `mapstructure:"loki"`
-	LLM         LLM         `mapstructure:"llm"`
-	Notify      Notify      `mapstructure:"notify"`
-	VMIdle      VMIdle      `mapstructure:"vm_idle"`
+	TaskFlow      TaskFlow            `mapstructure:"taskflow"`
+	MCPHub        MCPHub              `mapstructure:"mcp_hub"`
+	PublicHost    PublicHost          `mapstructure:"public_host"`
+	Task          Task                `mapstructure:"task"`
+	TaskSummary   TaskSummary         `mapstructure:"task_summary"`
+	Loki          Loki                `mapstructure:"loki"`
+	ClickHouse    ClickHouse          `mapstructure:"clickhouse"`
+	LLM           LLM                 `mapstructure:"llm"`
+	Notify        Notify              `mapstructure:"notify"`
+	VMIdle        VMIdle              `mapstructure:"vm_idle"`
+	Attachment    Attachment          `mapstructure:"attachment"`
+	ObjectStorage ObjectStorageConfig `mapstructure:"object_storage"`
+	StaticFiles   StaticFilesConfig   `mapstructure:"static_files"`
+	HostInstaller HostInstaller       `mapstructure:"host_installer"`
 
 	// Context7 API 配置
 	Context7ApiKey string `mapstructure:"context7_api_key"`
@@ -61,10 +69,23 @@ type Config struct {
 	Gitea  GiteaConfig  `mapstructure:"gitea"`
 	Gitee  GiteeConfig  `mapstructure:"gitee"`
 
+	// 微信配置（开放平台 OAuth 登录 + 公众号消息推送）
+	Wechat WechatConfig `mapstructure:"wechat"`
+
 	InitTeam InitTeam `mapstructure:"init_team"`
 
-	// 语音识别配置（阿里云 NLS）
+	// 语音识别配置（阿里云 NLS，用于一段录音 POST 接口）
 	NLS NLS `mapstructure:"nls"`
+
+	// 流式语音识别配置（豆包 SAUC bigmodel，用于 WS 实时流式接口）
+	Doubao Doubao `mapstructure:"doubao"`
+
+	ReviewAgent ReviewAgent `mapstructure:"review_agent"`
+}
+
+type ReviewAgent struct {
+	ModelID string `mapstructure:"model_id"`
+	Image   string `mapstructure:"image"`
 }
 
 // NLS 阿里云语音识别配置
@@ -74,10 +95,27 @@ type NLS struct {
 	AkKey  string `mapstructure:"ak_key"`
 }
 
+// Doubao 豆包流式语音识别 2.0 配置 (火山引擎 SAUC bigmodel)。
+// 新版控制台:只需 AppKey 一个鉴权字段 (作为 X-Api-Key header)。
+type Doubao struct {
+	// 火山控制台获取的 App Key,作为 X-Api-Key header 发送
+	AppKey string `mapstructure:"app_key"`
+	// 资源 ID;ASR 2.0 取值: volc.seedasr.sauc.duration (按时长) 或 volc.seedasr.sauc.concurrent (按并发)
+	ResourceID string `mapstructure:"resource_id"`
+	// WebSocket URL,默认 wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async
+	URL string `mapstructure:"url"`
+	// 自学习平台上预建的热词词表 ID (单表最多 5000 个热词)。
+	// BoostingTableID 与 BoostingTableName 二选一即可,同时配置时豆包优先用 ID。
+	BoostingTableID string `mapstructure:"boosting_table_id"`
+	// 自学习平台上预建的热词词表名称,可替代 BoostingTableID 使用 (改名会失效,推荐用 ID)
+	BoostingTableName string `mapstructure:"boosting_table_name"`
+}
+
 type InitTeam struct {
 	Email    string `mapstructure:"email"`
 	Password string `mapstructure:"password"`
 	Name     string `mapstructure:"name"`
+	Image    string `mapstructure:"image"`
 }
 
 type TaskFlow struct {
@@ -86,19 +124,60 @@ type TaskFlow struct {
 	GrpcURL  string `mapstructure:"grpc_url"`
 }
 
+type MCPHub struct {
+	Enabled bool   `mapstructure:"enabled"`
+	URL     string `mapstructure:"url"`
+	Token   string `mapstructure:"token"`
+}
+
 // PublicHost 公共主机配置（可选，内部项目通过 WithPublicHost 注入时生效）
 type PublicHost struct {
 	CountLimit int   `mapstructure:"count_limit"` // 每用户公共主机 VM 数量限制，0 表示不限制
 	TTLLimit   int64 `mapstructure:"ttl_limit"`   // 公共主机 VM 续期上限（秒），0 表示不限制
 }
 
+type Attachment struct {
+	AllowedURLPrefixes []string `mapstructure:"allowed_url_prefixes"`
+}
+
+type ObjectStorageConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	Provider        string `mapstructure:"provider"`
+	ForcePathStyle  bool   `mapstructure:"force_path_style"`
+	InitBucket      bool   `mapstructure:"init_bucket"`
+	PresignExpires  string `mapstructure:"presign_expires"`
+	Endpoint        string `mapstructure:"endpoint"`
+	AccessEndpoint  string `mapstructure:"access_endpoint"`
+	AccessKey       string `mapstructure:"access_key"`
+	AccessKeySecret string `mapstructure:"access_key_secret"`
+	Bucket          string `mapstructure:"bucket"`
+	Region          string `mapstructure:"region"`
+	MaxSize         int64  `mapstructure:"max_size"`
+	AvatarPrefix    string `mapstructure:"avatar_prefix"`
+	SpecPrefix      string `mapstructure:"spec_prefix"`
+	RepoPrefix      string `mapstructure:"repo_prefix"`
+	TempPrefix      string `mapstructure:"temp_prefix"`
+}
+
+type StaticFilesConfig struct {
+	Enabled     bool   `mapstructure:"enabled"`
+	Dir         string `mapstructure:"dir"`
+	RoutePrefix string `mapstructure:"route_prefix"`
+}
+
+type HostInstaller struct {
+	Mode       string `mapstructure:"mode"`
+	BundlePath string `mapstructure:"bundle_path"`
+}
+
 // Task 任务相关配置
 type Task struct {
-	LogLimit         int    `mapstructure:"log_limit"`          // Loki tail 日志 limit
-	TaskerTTLSeconds int    `mapstructure:"tasker_ttl_seconds"` // Tasker 状态机 TTL（秒）
-	ImageID          string `mapstructure:"image_id"`           // 默认镜像 ID
-	Core             int    `mapstructure:"core"`               // VM CPU 核数
-	Memory           uint64 `mapstructure:"memory"`             // VM 内存（字节）
+	LogLimit            int    `mapstructure:"log_limit"`              // Loki tail 日志 limit
+	TaskerTTLSeconds    int    `mapstructure:"tasker_ttl_seconds"`     // Tasker 状态机 TTL（秒）
+	CreateReqTTLSeconds int    `mapstructure:"create_req_ttl_seconds"` // 创建任务请求 Redis TTL（秒）
+	ImageID             string `mapstructure:"image_id"`               // 默认镜像 ID
+	Core                int    `mapstructure:"core"`                   // VM CPU 核数
+	Memory              uint64 `mapstructure:"memory"`                 // VM 内存（字节）
 }
 
 // TaskSummary 任务摘要生成配置
@@ -110,12 +189,28 @@ type TaskSummary struct {
 	InterfaceType string `mapstructure:"interface_type"` // API 接口类型（openai_chat/openai_responses/anthropic）
 	Delay         int    `mapstructure:"delay"`          // 延迟时间（秒），默认 3600
 	MaxChars      int    `mapstructure:"max_chars"`      // 摘要最大字符数，默认 300
+	MaxRounds     int    `mapstructure:"max_rounds"`     // 最近对话轮数，默认 3
 	MaxWorkers    int    `mapstructure:"max_workers"`    // 最大消费者数量，默认 5
 }
 
 // Loki Loki 日志配置
 type Loki struct {
 	Addr string `mapstructure:"addr"` // Loki 服务地址
+}
+
+type ClickHouse struct {
+	Addr            string `mapstructure:"addr"`
+	Database        string `mapstructure:"database"`
+	Table           string `mapstructure:"table"`
+	ModelUsageTable string `mapstructure:"model_usage_table"`
+	InitEnabled     bool   `mapstructure:"init_enabled"`
+	Username        string `mapstructure:"username"`
+	Password        string `mapstructure:"password"`
+	ReadUsername    string `mapstructure:"read_username"`
+	ReadPassword    string `mapstructure:"read_password"`
+	MaxOpenConns    int    `mapstructure:"max_open_conns"`
+	MaxIdleConns    int    `mapstructure:"max_idle_conns"`
+	ConnMaxLifetime int    `mapstructure:"conn_max_lifetime"`
 }
 
 // LLM 大语言模型配置
@@ -132,8 +227,10 @@ type Notify struct {
 }
 
 type VMIdle struct {
-	SleepSeconds   int `mapstructure:"sleep_seconds"`   // VM 空闲休眠时间（秒）
-	RecycleSeconds int `mapstructure:"recycle_seconds"` // VM 空闲回收时间（秒）
+	SleepSeconds                  int   `mapstructure:"sleep_seconds"`                     // VM 空闲休眠时间（秒）
+	RecycleSeconds                int   `mapstructure:"recycle_seconds"`                   // VM 空闲回收时间（秒）
+	RecycleWarnWechatLeadSeconds  []int `mapstructure:"recycle_warn_wechat_lead_seconds"`  // VM 回收前，微信公众号档每个 tier 的提前预警时长（秒），可配多档；缺省 [7200, 900]
+	RecycleWarnDefaultLeadSeconds int   `mapstructure:"recycle_warn_default_lead_seconds"` // VM 回收前，非微信公众号渠道（钉钉/飞书等）的提前预警时长（秒），<=0 视为禁用该档；缺省 3600
 }
 
 type Session struct {
@@ -165,8 +262,20 @@ func Init(dir string) (*Config, error) {
 
 	v.SetDefault("debug", false)
 	v.SetDefault("server.addr", ":8888")
-	v.SetDefault("server.base_url", "http://localhost:8888")
+	v.SetDefault("server.base_url", "")
 	v.SetDefault("loki.addr", "http://monkeycode-ai-loki:3100")
+	v.SetDefault("clickhouse.addr", "")
+	v.SetDefault("clickhouse.database", "")
+	v.SetDefault("clickhouse.table", "task_logs")
+	v.SetDefault("clickhouse.model_usage_table", "model_usage_events")
+	v.SetDefault("clickhouse.init_enabled", false)
+	v.SetDefault("clickhouse.username", "")
+	v.SetDefault("clickhouse.password", "")
+	v.SetDefault("clickhouse.read_username", "")
+	v.SetDefault("clickhouse.read_password", "")
+	v.SetDefault("clickhouse.max_open_conns", 64)
+	v.SetDefault("clickhouse.max_idle_conns", 32)
+	v.SetDefault("clickhouse.conn_max_lifetime", 3600)
 	v.SetDefault("database.master", "")
 	v.SetDefault("database.slave", "")
 	v.SetDefault("database.max_open_conns", 100)
@@ -174,7 +283,7 @@ func Init(dir string) (*Config, error) {
 	v.SetDefault("database.conn_max_lifetime", 30)
 	v.SetDefault("root_path", "/app")
 	v.SetDefault("logger.level", "info")
-	v.SetDefault("session.expire_day", 1)
+	v.SetDefault("session.expire_day", 30)
 	v.SetDefault("smtp.host", "")
 	v.SetDefault("smtp.port", 587)
 	v.SetDefault("smtp.username", "")
@@ -190,12 +299,53 @@ func Init(dir string) (*Config, error) {
 	v.SetDefault("init_team.email", "")
 	v.SetDefault("init_team.name", "")
 	v.SetDefault("init_team.password", "")
+	v.SetDefault("init_team.image", "")
 	v.SetDefault("taskflow.grpc_url", "")
+	v.SetDefault("task.at_keyword", "")
+	v.SetDefault("task.host_ids", []string{})
+	v.SetDefault("task.create_req_ttl_seconds", 600)
+	v.SetDefault("mcp_hub.enabled", false)
+	v.SetDefault("mcp_hub.url", "")
+	v.SetDefault("mcp_hub.token", "")
+	v.SetDefault("attachment.allowed_url_prefixes", []string{})
+	v.SetDefault("object_storage.enabled", false)
+	v.SetDefault("object_storage.provider", "s3")
+	v.SetDefault("object_storage.force_path_style", true)
+	v.SetDefault("object_storage.init_bucket", false)
+	v.SetDefault("object_storage.presign_expires", "168h")
+	v.SetDefault("object_storage.endpoint", "http://monkeycode-ai-rustfs:9000")
+	v.SetDefault("object_storage.access_endpoint", "")
+	v.SetDefault("object_storage.access_key", "")
+	v.SetDefault("object_storage.access_key_secret", "")
+	v.SetDefault("object_storage.bucket", "monkeycode-ai")
+	v.SetDefault("object_storage.region", "us-east-1")
+	v.SetDefault("object_storage.max_size", 50<<20)
+	v.SetDefault("object_storage.avatar_prefix", "avatar")
+	v.SetDefault("object_storage.spec_prefix", "spec")
+	v.SetDefault("object_storage.repo_prefix", "repo")
+	v.SetDefault("object_storage.temp_prefix", "temp")
+	v.SetDefault("static_files.enabled", true)
+	v.SetDefault("static_files.dir", "/app/static")
+	v.SetDefault("static_files.route_prefix", "/static")
+	v.SetDefault("host_installer.mode", "online")
+	v.SetDefault("host_installer.bundle_path", "installer/{{.arch}}/host.tgz")
+	v.SetDefault("llm_proxy.base_url", "")
+	v.SetDefault("wechat.open.app_id", "")
+	v.SetDefault("wechat.open.app_secret", "")
+	v.SetDefault("wechat.open.scope", "snsapi_login")
+	v.SetDefault("wechat.mp.app_id", "")
+	v.SetDefault("wechat.mp.app_secret", "")
+	v.SetDefault("wechat.mp.token", "")
+	v.SetDefault("wechat.mp.templates", map[string]string{})
 
 	v.SetConfigType("yaml")
 	v.AddConfigPath(dir)
 	v.SetConfigName("config")
 	v.ReadInConfig()
+
+	if err := normalizeWechatMPTemplates(v); err != nil {
+		return nil, err
+	}
 
 	c := Config{}
 	if err := v.Unmarshal(&c); err != nil {
@@ -203,6 +353,47 @@ func Init(dir string) (*Config, error) {
 	}
 
 	return &c, nil
+}
+
+func normalizeWechatMPTemplates(v *viper.Viper) error {
+	raw := v.GetStringMap("wechat.mp.templates")
+	if len(raw) == 0 {
+		return nil
+	}
+
+	flat := make(map[string]string, len(raw))
+	for key, value := range raw {
+		valueStr, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("invalid wechat.mp.templates value type at %s: %T", key, value)
+		}
+
+		normalizedKey := normalizeWechatMPTemplateKey(key)
+		if _, exists := flat[normalizedKey]; exists && normalizedKey != key {
+			continue
+		}
+		flat[normalizedKey] = valueStr
+	}
+
+	v.Set("wechat.mp.templates", flat)
+	return nil
+}
+
+func normalizeWechatMPTemplateKey(key string) string {
+	switch key {
+	case "vm_expiring_soon":
+		return string(consts.NotifyEventVMExpiringSoon)
+	case "quota_refreshed":
+		return string(consts.NotifyEventQuotaRefreshed)
+	case "quota_basic_exhausted":
+		return string(consts.NotifyEventQuotaBasicExhausted)
+	case "quota_pro_exhausted":
+		return string(consts.NotifyEventQuotaProExhausted)
+	case "quota_ultra_exhausted":
+		return string(consts.NotifyEventQuotaUltraExhausted)
+	default:
+		return key
+	}
 }
 
 // GithubConfig GitHub 配置
@@ -419,4 +610,29 @@ func (c *Config) GetGiteeOAuthRedirectURL() string {
 		return c.Gitee.OAuth.RedirectURL
 	}
 	return c.Server.BaseURL + "/api/v1/oauth/gitee/callback"
+}
+
+// WechatConfig 微信配置（包含开放平台和公众号两部分）
+type WechatConfig struct {
+	Open WechatOpenConfig `mapstructure:"open"`
+	MP   WechatMPConfig   `mapstructure:"mp"`
+}
+
+// WechatOpenConfig 微信开放平台配置 - 用于网站扫码登录
+type WechatOpenConfig struct {
+	AppID       string `mapstructure:"app_id"`
+	AppSecret   string `mapstructure:"app_secret"`
+	CallbackURL string `mapstructure:"callback_url"`
+	Scope       string `mapstructure:"scope"`
+	Debug       bool   `mapstructure:"debug"`
+}
+
+// WechatMPConfig 微信公众号配置 - 用于消息推送
+type WechatMPConfig struct {
+	AppID          string            `mapstructure:"app_id"`
+	AppSecret      string            `mapstructure:"app_secret"`
+	Token          string            `mapstructure:"token"`
+	EncodingAESKey string            `mapstructure:"encoding_aes_key"`
+	Templates      map[string]string `mapstructure:"templates"`
+	MirrorMode     bool              `mapstructure:"mirror_mode"`
 }

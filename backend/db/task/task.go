@@ -25,24 +25,34 @@ const (
 	FieldSubType = "sub_type"
 	// FieldContent holds the string denoting the content field in the database.
 	FieldContent = "content"
+	// FieldTitle holds the string denoting the title field in the database.
+	FieldTitle = "title"
 	// FieldSummary holds the string denoting the summary field in the database.
 	FieldSummary = "summary"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldLogStore holds the string denoting the log_store field in the database.
+	FieldLogStore = "log_store"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
+	// FieldLastActiveAt holds the string denoting the last_active_at field in the database.
+	FieldLastActiveAt = "last_active_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
 	// FieldCompletedAt holds the string denoting the completed_at field in the database.
 	FieldCompletedAt = "completed_at"
 	// EdgeProjectTasks holds the string denoting the project_tasks edge name in mutations.
 	EdgeProjectTasks = "project_tasks"
+	// EdgeGitTasks holds the string denoting the git_tasks edge name in mutations.
+	EdgeGitTasks = "git_tasks"
 	// EdgeUser holds the string denoting the user edge name in mutations.
 	EdgeUser = "user"
 	// EdgeVms holds the string denoting the vms edge name in mutations.
 	EdgeVms = "vms"
 	// EdgeGitBotTasks holds the string denoting the git_bot_tasks edge name in mutations.
 	EdgeGitBotTasks = "git_bot_tasks"
+	// EdgeModelSwitches holds the string denoting the model_switches edge name in mutations.
+	EdgeModelSwitches = "model_switches"
 	// EdgeTaskVms holds the string denoting the task_vms edge name in mutations.
 	EdgeTaskVms = "task_vms"
 	// Table holds the table name of the task in the database.
@@ -54,6 +64,13 @@ const (
 	ProjectTasksInverseTable = "project_tasks"
 	// ProjectTasksColumn is the table column denoting the project_tasks relation/edge.
 	ProjectTasksColumn = "task_id"
+	// GitTasksTable is the table that holds the git_tasks relation/edge.
+	GitTasksTable = "git_tasks"
+	// GitTasksInverseTable is the table name for the GitTask entity.
+	// It exists in this package in order to avoid circular dependency with the "gittask" package.
+	GitTasksInverseTable = "git_tasks"
+	// GitTasksColumn is the table column denoting the git_tasks relation/edge.
+	GitTasksColumn = "task_id"
 	// UserTable is the table that holds the user relation/edge.
 	UserTable = "tasks"
 	// UserInverseTable is the table name for the User entity.
@@ -73,6 +90,13 @@ const (
 	GitBotTasksInverseTable = "git_bot_tasks"
 	// GitBotTasksColumn is the table column denoting the git_bot_tasks relation/edge.
 	GitBotTasksColumn = "task_id"
+	// ModelSwitchesTable is the table that holds the model_switches relation/edge.
+	ModelSwitchesTable = "task_model_switches"
+	// ModelSwitchesInverseTable is the table name for the TaskModelSwitch entity.
+	// It exists in this package in order to avoid circular dependency with the "taskmodelswitch" package.
+	ModelSwitchesInverseTable = "task_model_switches"
+	// ModelSwitchesColumn is the table column denoting the model_switches relation/edge.
+	ModelSwitchesColumn = "task_id"
 	// TaskVmsTable is the table that holds the task_vms relation/edge.
 	TaskVmsTable = "task_virtualmachines"
 	// TaskVmsInverseTable is the table name for the TaskVirtualMachine entity.
@@ -90,9 +114,12 @@ var Columns = []string{
 	FieldKind,
 	FieldSubType,
 	FieldContent,
+	FieldTitle,
 	FieldSummary,
 	FieldStatus,
+	FieldLogStore,
 	FieldCreatedAt,
+	FieldLastActiveAt,
 	FieldUpdatedAt,
 	FieldCompletedAt,
 }
@@ -125,6 +152,8 @@ var (
 	ContentValidator func(string) error
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
+	// DefaultLastActiveAt holds the default value on creation for the "last_active_at" field.
+	DefaultLastActiveAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
@@ -164,6 +193,11 @@ func ByContent(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldContent, opts...).ToFunc()
 }
 
+// ByTitle orders the results by the title field.
+func ByTitle(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTitle, opts...).ToFunc()
+}
+
 // BySummary orders the results by the summary field.
 func BySummary(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSummary, opts...).ToFunc()
@@ -174,9 +208,19 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
 }
 
+// ByLogStore orders the results by the log_store field.
+func ByLogStore(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLogStore, opts...).ToFunc()
+}
+
 // ByCreatedAt orders the results by the created_at field.
 func ByCreatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCreatedAt, opts...).ToFunc()
+}
+
+// ByLastActiveAt orders the results by the last_active_at field.
+func ByLastActiveAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastActiveAt, opts...).ToFunc()
 }
 
 // ByUpdatedAt orders the results by the updated_at field.
@@ -200,6 +244,13 @@ func ByProjectTasksCount(opts ...sql.OrderTermOption) OrderOption {
 func ByProjectTasks(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
 		sqlgraph.OrderByNeighborTerms(s, newProjectTasksStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByGitTasksField orders the results by git_tasks field.
+func ByGitTasksField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newGitTasksStep(), sql.OrderByField(field, opts...))
 	}
 }
 
@@ -238,6 +289,20 @@ func ByGitBotTasks(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByModelSwitchesCount orders the results by model_switches count.
+func ByModelSwitchesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newModelSwitchesStep(), opts...)
+	}
+}
+
+// ByModelSwitches orders the results by model_switches terms.
+func ByModelSwitches(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newModelSwitchesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByTaskVmsCount orders the results by task_vms count.
 func ByTaskVmsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -256,6 +321,13 @@ func newProjectTasksStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(ProjectTasksInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, ProjectTasksTable, ProjectTasksColumn),
+	)
+}
+func newGitTasksStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(GitTasksInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2O, false, GitTasksTable, GitTasksColumn),
 	)
 }
 func newUserStep() *sqlgraph.Step {
@@ -277,6 +349,13 @@ func newGitBotTasksStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GitBotTasksInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, GitBotTasksTable, GitBotTasksColumn),
+	)
+}
+func newModelSwitchesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ModelSwitchesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ModelSwitchesTable, ModelSwitchesColumn),
 	)
 }
 func newTaskVmsStep() *sqlgraph.Step {

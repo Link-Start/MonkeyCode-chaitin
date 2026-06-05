@@ -69,6 +69,18 @@ func (f GitIdentityFunc) Mutate(ctx context.Context, m db.Mutation) (db.Value, e
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *db.GitIdentityMutation", m)
 }
 
+// The GitTaskFunc type is an adapter to allow the use of ordinary
+// function as GitTask mutator.
+type GitTaskFunc func(context.Context, *db.GitTaskMutation) (db.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f GitTaskFunc) Mutate(ctx context.Context, m db.Mutation) (db.Value, error) {
+	if mv, ok := m.(*db.GitTaskMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *db.GitTaskMutation", m)
+}
+
 // The HostFunc type is an adapter to allow the use of ordinary
 // function as Host mutator.
 type HostFunc func(context.Context, *db.HostMutation) (db.Value, error)
@@ -91,6 +103,42 @@ func (f ImageFunc) Mutate(ctx context.Context, m db.Mutation) (db.Value, error) 
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *db.ImageMutation", m)
+}
+
+// The MCPToolFunc type is an adapter to allow the use of ordinary
+// function as MCPTool mutator.
+type MCPToolFunc func(context.Context, *db.MCPToolMutation) (db.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MCPToolFunc) Mutate(ctx context.Context, m db.Mutation) (db.Value, error) {
+	if mv, ok := m.(*db.MCPToolMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *db.MCPToolMutation", m)
+}
+
+// The MCPUpstreamFunc type is an adapter to allow the use of ordinary
+// function as MCPUpstream mutator.
+type MCPUpstreamFunc func(context.Context, *db.MCPUpstreamMutation) (db.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MCPUpstreamFunc) Mutate(ctx context.Context, m db.Mutation) (db.Value, error) {
+	if mv, ok := m.(*db.MCPUpstreamMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *db.MCPUpstreamMutation", m)
+}
+
+// The MCPUserToolSettingFunc type is an adapter to allow the use of ordinary
+// function as MCPUserToolSetting mutator.
+type MCPUserToolSettingFunc func(context.Context, *db.MCPUserToolSettingMutation) (db.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MCPUserToolSettingFunc) Mutate(ctx context.Context, m db.Mutation) (db.Value, error) {
+	if mv, ok := m.(*db.MCPUserToolSettingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *db.MCPUserToolSettingMutation", m)
 }
 
 // The ModelFunc type is an adapter to allow the use of ordinary
@@ -247,6 +295,18 @@ func (f TaskFunc) Mutate(ctx context.Context, m db.Mutation) (db.Value, error) {
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *db.TaskMutation", m)
+}
+
+// The TaskModelSwitchFunc type is an adapter to allow the use of ordinary
+// function as TaskModelSwitch mutator.
+type TaskModelSwitchFunc func(context.Context, *db.TaskModelSwitchMutation) (db.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TaskModelSwitchFunc) Mutate(ctx context.Context, m db.Mutation) (db.Value, error) {
+	if mv, ok := m.(*db.TaskModelSwitchMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *db.TaskModelSwitchMutation", m)
 }
 
 // The TaskUsageStatFunc type is an adapter to allow the use of ordinary

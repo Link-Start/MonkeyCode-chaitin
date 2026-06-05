@@ -24,10 +24,18 @@ type Tx struct {
 	GitBotUser *GitBotUserClient
 	// GitIdentity is the client for interacting with the GitIdentity builders.
 	GitIdentity *GitIdentityClient
+	// GitTask is the client for interacting with the GitTask builders.
+	GitTask *GitTaskClient
 	// Host is the client for interacting with the Host builders.
 	Host *HostClient
 	// Image is the client for interacting with the Image builders.
 	Image *ImageClient
+	// MCPTool is the client for interacting with the MCPTool builders.
+	MCPTool *MCPToolClient
+	// MCPUpstream is the client for interacting with the MCPUpstream builders.
+	MCPUpstream *MCPUpstreamClient
+	// MCPUserToolSetting is the client for interacting with the MCPUserToolSetting builders.
+	MCPUserToolSetting *MCPUserToolSettingClient
 	// Model is the client for interacting with the Model builders.
 	Model *ModelClient
 	// ModelApiKey is the client for interacting with the ModelApiKey builders.
@@ -54,6 +62,8 @@ type Tx struct {
 	ProjectTask *ProjectTaskClient
 	// Task is the client for interacting with the Task builders.
 	Task *TaskClient
+	// TaskModelSwitch is the client for interacting with the TaskModelSwitch builders.
+	TaskModelSwitch *TaskModelSwitchClient
 	// TaskUsageStat is the client for interacting with the TaskUsageStat builders.
 	TaskUsageStat *TaskUsageStatClient
 	// TaskVirtualMachine is the client for interacting with the TaskVirtualMachine builders.
@@ -220,8 +230,12 @@ func (tx *Tx) init() {
 	tx.GitBotTask = NewGitBotTaskClient(tx.config)
 	tx.GitBotUser = NewGitBotUserClient(tx.config)
 	tx.GitIdentity = NewGitIdentityClient(tx.config)
+	tx.GitTask = NewGitTaskClient(tx.config)
 	tx.Host = NewHostClient(tx.config)
 	tx.Image = NewImageClient(tx.config)
+	tx.MCPTool = NewMCPToolClient(tx.config)
+	tx.MCPUpstream = NewMCPUpstreamClient(tx.config)
+	tx.MCPUserToolSetting = NewMCPUserToolSettingClient(tx.config)
 	tx.Model = NewModelClient(tx.config)
 	tx.ModelApiKey = NewModelApiKeyClient(tx.config)
 	tx.ModelPricing = NewModelPricingClient(tx.config)
@@ -235,6 +249,7 @@ func (tx *Tx) init() {
 	tx.ProjectIssueComment = NewProjectIssueCommentClient(tx.config)
 	tx.ProjectTask = NewProjectTaskClient(tx.config)
 	tx.Task = NewTaskClient(tx.config)
+	tx.TaskModelSwitch = NewTaskModelSwitchClient(tx.config)
 	tx.TaskUsageStat = NewTaskUsageStatClient(tx.config)
 	tx.TaskVirtualMachine = NewTaskVirtualMachineClient(tx.config)
 	tx.Team = NewTeamClient(tx.config)

@@ -20,7 +20,7 @@ import Icon from "@/components/common/Icon"
 import { ConstsHostStatus, type DomainCreateVMReq } from "@/api/Api"
 import { apiRequest } from "@/utils/requestUtils"
 import { toast } from "sonner"
-import { canUseModelBySubscription, getOSFromImageName, getImageShortName, getBrandFromModelName, getGitPlatformIcon, getOwnerTypeBadge, getHostBadges, selectImage, selectHost, selectPreferredTaskModel, getModelHealthBadge, getInterfaceTypeBadge } from "@/utils/common"
+import { canManageDevEnvironment, getOSFromImageName, getImageShortName, getBrandFromModel, getGitPlatformIcon, getModelDisplayNameForModel, getOwnerTypeBadge, getHostBadges, selectImage, selectHost, selectPreferredTaskModel, getInterfaceTypeBadge } from "@/utils/common"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Tooltip,
@@ -73,7 +73,8 @@ export default function VmAddDialog({
     }
     return BASE_LIFE_OPTIONS;
   }, [selectedHostId]);
-  const { models, images, identities, hosts, subscription } = useCommonData();
+  const { models, images, identities, hosts, subscription, user } = useCommonData();
+  const canCreateVm = canManageDevEnvironment(user)
 
   const cpuOptions = useMemo(() => {
     let maxCpu = 0
@@ -110,26 +111,73 @@ export default function VmAddDialog({
   }, [hosts, selectedHostId])
 
   useEffect(() => {
-    if (open) {      
-      setSelectedHostId(selectHost(hosts, true));
-      setSelectedImageId(selectImage(images, true));
-      setSelectedModelId(selectPreferredTaskModel(models, subscription));
+    if (!open) return
 
-      setCpu("1")
-      setMemory("2")
-      setLife("1h")
-    }
-  }, [open, hosts, images, models, subscription])
+    setSelectedHostId(selectHost(hosts, true))
+    setSelectedImageId(selectImage(images, true))
+    setSelectedModelId(selectPreferredTaskModel(models, subscription))
+    setCpu("1")
+    setMemory("2")
+    setLife("1h")
+  }, [open])
 
   useEffect(() => {
-    const selectedModel = models.find((model) => model.id === selectedModelId)
-    if (!selectedModel || canUseModelBySubscription(selectedModel, subscription)) {
-      return
+    if (!open) return
+
+    const hostIsValid = selectedHostId === "public_host"
+      || hosts.some((host) => host.id === selectedHostId && host.status === ConstsHostStatus.HostStatusOnline)
+
+    if (!hostIsValid) {
+      setSelectedHostId(selectHost(hosts, true))
     }
-    setSelectedModelId(selectPreferredTaskModel(models, subscription))
-  }, [models, selectedModelId, subscription])
+  }, [hosts, open, selectedHostId])
+
+  useEffect(() => {
+    if (!open) return
+
+    const imageIsValid = images.some((image) => image.id === selectedImageId)
+    if (!imageIsValid) {
+      setSelectedImageId(selectImage(images, true))
+    }
+  }, [images, open, selectedImageId])
+
+  useEffect(() => {
+    if (!open) return
+
+    const modelIsValid = models.some((model) => model.id === selectedModelId)
+    if (!modelIsValid) {
+      setSelectedModelId(selectPreferredTaskModel(models, subscription))
+    }
+  }, [models, open, selectedModelId, subscription])
+
+  useEffect(() => {
+    if (!open) return
+
+    if (cpuOptions.some((option) => option.value === cpu)) return
+    setCpu(cpuOptions[0]?.value || "")
+  }, [cpu, cpuOptions, open])
+
+  useEffect(() => {
+    if (!open) return
+
+    if (memoryOptions.some((option) => option.value === memory)) return
+    setMemory(memoryOptions[0]?.value || "")
+  }, [memory, memoryOptions, open])
+
+  useEffect(() => {
+    if (!open) return
+
+    if (lifeOptions.some((option) => option.value === life)) return
+    setLife(lifeOptions[0]?.value || "")
+  }, [life, lifeOptions, open])
 
   const handleCreate = async () => {
+    if (!canCreateVm) {
+      toast.error("仅团队空间支持创建开发环境")
+      onOpenChange(false)
+      return
+    }
+
     // 验证必填项
     if (!vmName.trim()) {
       toast.error("请输入开发环境名称")
@@ -311,7 +359,6 @@ export default function VmAddDialog({
                             <div className="flex items-center gap-2">
                               <Icon name={getOSFromImageName(image.name || '')} className="h-4 w-4" />
                               <span>{image.remark || getImageShortName(image.name || '')}</span>
-                              {image.is_default && <Badge>默认</Badge>}
                               {getOwnerTypeBadge(image.owner)}
                             </div>
                             </TooltipTrigger>
@@ -333,14 +380,12 @@ export default function VmAddDialog({
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
-                    {models.filter(model => model.id).map((model) => (
-                      <SelectItem key={model.id} value={model.id!} disabled={!canUseModelBySubscription(model, subscription)}>
+                    <SelectContent>
+                      {models.filter(model => model.id).map((model) => (
+                      <SelectItem key={model.id} value={model.id!}>
                         <div className="flex items-center gap-2">
-                          <Icon name={getBrandFromModelName(model.model || '')} className="size-4" />
-                          {getModelHealthBadge(model)}
-                          <span>{model.model || '未知模型'}</span>
-                          {model.is_default && <Badge>默认</Badge>}
+                          <Icon name={getBrandFromModel(model)} className="size-4" />
+                          <span>{getModelDisplayNameForModel(model) || '未知模型'}</span>
                           {getOwnerTypeBadge(model.owner)}
                           {getInterfaceTypeBadge(model.interface_type)}
                         </div>
@@ -406,7 +451,7 @@ export default function VmAddDialog({
           <Button variant="outline" onClick={handleCancel} disabled={loading}>
             取消
           </Button>
-          <Button onClick={handleCreate} disabled={loading}>
+          <Button onClick={handleCreate} disabled={loading || !canCreateVm}>
             {loading && <Spinner className="mr-2 h-4 w-4" />}
             创建
           </Button>

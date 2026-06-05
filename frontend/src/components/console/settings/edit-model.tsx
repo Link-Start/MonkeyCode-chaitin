@@ -22,8 +22,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Spinner } from "@/components/ui/spinner"
-import { getModelUrlDescription, modelProviderList } from "@/utils/common"
+import { getModelDisplayName, getModelUrlDescription, modelProviderList } from "@/utils/common"
 
 interface EditModelProps {
   open: boolean
@@ -42,7 +43,12 @@ export default function EditModel({
   const [apiToken, setApiToken] = useState("")
   const [baseUrl, setBaseUrl] = useState("")
   const [selectedModel, setSelectedModel] = useState("")
+  const [remark, setRemark] = useState("")
   const [interfaceType, setInterfaceType] = useState<ConstsInterfaceType>(ConstsInterfaceType.InterfaceTypeOpenAIChat)
+  const [contextLimit, setContextLimit] = useState("")
+  const [outputLimit, setOutputLimit] = useState("")
+  const [thinkingEnabled, setThinkingEnabled] = useState(false)
+  const [supportImage, setSupportImage] = useState(false)
   const [modelList, setModelList] = useState<DomainProviderModelListItem[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -66,10 +72,30 @@ export default function EditModel({
       setApiToken(model.api_key || "")
       setBaseUrl(model.base_url || "https://model-square.app.baizhi.cloud/v1")
       setSelectedModel(model.model || "")
+      setRemark(model.remark || "")
       setInterfaceType(model.interface_type || ConstsInterfaceType.InterfaceTypeOpenAIChat)
+      setContextLimit(model.context_limit ? String(model.context_limit) : "")
+      setOutputLimit(model.output_limit ? String(model.output_limit) : "")
+      setThinkingEnabled(model.thinking_enabled === true)
+      setSupportImage(model.support_image === true)
       resetModelListState()
     }
   }, [model, open])
+
+  const parseOptionalPositiveInteger = (value: string, label: string) => {
+    const trimmedValue = value.trim()
+    if (!trimmedValue) {
+      return undefined
+    }
+
+    const parsedValue = Number(trimmedValue)
+    if (!Number.isInteger(parsedValue) || parsedValue < 1) {
+      toast.error(`${label}必须为大于 0 的整数`)
+      return null
+    }
+
+    return parsedValue
+  }
 
   const fetchModelList = async () => {
     if (!apiToken.trim()) {
@@ -127,6 +153,14 @@ export default function EditModel({
       toast.error("请输入模型 API 地址")
       return
     }
+    const parsedContextLimit = parseOptionalPositiveInteger(contextLimit, "上下文长度")
+    if (parsedContextLimit === null) {
+      return
+    }
+    const parsedOutputLimit = parseOptionalPositiveInteger(outputLimit, "输出长度")
+    if (parsedOutputLimit === null) {
+      return
+    }
 
     setSaving(true)
 
@@ -147,8 +181,19 @@ export default function EditModel({
           const requestData: any = {
             api_key: apiToken.trim(),
             model: selectedModel.trim(),
+            remark: remark.trim(),
             base_url: baseUrl.trim(),
             interface_type: interfaceType,
+            thinking_enabled: thinkingEnabled,
+            support_image: supportImage,
+          }
+
+          if (parsedContextLimit !== undefined) {
+            requestData.context_limit = parsedContextLimit
+          }
+
+          if (parsedOutputLimit !== undefined) {
+            requestData.output_limit = parsedOutputLimit
           }
 
           // 如果 provider 存在，也一起更新
@@ -162,7 +207,12 @@ export default function EditModel({
               setApiToken("")
               setBaseUrl("")
               setSelectedModel("")
+              setRemark("")
               setInterfaceType(ConstsInterfaceType.InterfaceTypeOpenAIChat)
+              setContextLimit("")
+              setOutputLimit("")
+              setThinkingEnabled(false)
+              setSupportImage(false)
               resetModelListState()
               onOpenChange(false)
               onRefresh?.()
@@ -181,7 +231,12 @@ export default function EditModel({
     setApiToken("")
     setBaseUrl("")
     setSelectedModel("")
+    setRemark("")
     setInterfaceType(ConstsInterfaceType.InterfaceTypeOpenAIChat)
+    setContextLimit("")
+    setOutputLimit("")
+    setThinkingEnabled(false)
+    setSupportImage(false)
     resetModelListState()
     onOpenChange(false)
   }
@@ -321,7 +376,7 @@ export default function EditModel({
                               <SelectLabel>{groupKey}</SelectLabel>
                               {groups[groupKey].map((item, index) => (
                                 <SelectItem key={`${groupKey}-${index}`} value={item.model || ""}>
-                                  {item.model}
+                                  {getModelDisplayName(item.model)}
                                 </SelectItem>
                               ))}
                             </SelectGroup>
@@ -342,6 +397,75 @@ export default function EditModel({
               )}
             </FieldContent>
           </Field>
+          <Field>
+            <FieldLabel>备注</FieldLabel>
+            <FieldContent>
+              <Input
+                placeholder="请输入备注（选填）"
+                value={remark}
+                onChange={(e) => setRemark(e.target.value)}
+              />
+            </FieldContent>
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field>
+              <FieldLabel>上下文长度</FieldLabel>
+              <FieldContent>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  placeholder="请输入上下文长度"
+                  value={contextLimit}
+                  onChange={(e) => setContextLimit(e.target.value)}
+                />
+              </FieldContent>
+            </Field>
+            <Field>
+              <FieldLabel>输出长度</FieldLabel>
+              <FieldContent>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  placeholder="请输入输出长度"
+                  value={outputLimit}
+                  onChange={(e) => setOutputLimit(e.target.value)}
+                />
+              </FieldContent>
+            </Field>
+          </div>
+          <Field>
+            <FieldLabel>推理 / 思考</FieldLabel>
+            <FieldContent>
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <span className="text-sm text-muted-foreground">
+                  {thinkingEnabled ? "启用" : "禁用"}
+                </span>
+                <Switch
+                  checked={thinkingEnabled}
+                  onCheckedChange={setThinkingEnabled}
+                  disabled={saving}
+                />
+              </div>
+            </FieldContent>
+          </Field>
+          <Field>
+            <FieldLabel>图片识别</FieldLabel>
+            <FieldContent>
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <span className="text-sm text-muted-foreground">
+                  {supportImage ? "支持" : "不支持"}
+                </span>
+                <Switch
+                  checked={supportImage}
+                  onCheckedChange={setSupportImage}
+                  disabled={saving}
+                />
+              </div>
+            </FieldContent>
+            <FieldDescription>开启后，该模型可接收图片输入用于识别和分析。</FieldDescription>
+          </Field>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleCancel} disabled={saving}>
@@ -356,4 +480,3 @@ export default function EditModel({
     </Dialog>
   )
 }
-

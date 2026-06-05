@@ -210,7 +210,7 @@ export default function ViewIssueDialog({
                     }} />
                 </div>
               ) : (
-                <div className="border rounded-md p-2 min-h-10 bg-neutral-50">
+                <div className="border rounded-md p-2 min-h-10 bg-muted/40">
                   <Markdown>{issueData?.requirement_document || "暂无内容"}</Markdown>
                 </div>
               )}
@@ -243,7 +243,7 @@ export default function ViewIssueDialog({
                     }} />
                 </div>
               ) : (
-                <div className="border rounded-md p-2 min-h-10 bg-neutral-50">
+                <div className="border rounded-md p-2 min-h-10 bg-muted/40">
                   <Markdown>{issueData?.design_document || "暂无内容"}</Markdown>
                 </div>
               )}
@@ -300,7 +300,7 @@ export default function ViewIssueDialog({
               <Label>创建者</Label>
               <div className="flex flex-row gap-2 items-center">
                 <Avatar className="size-5">
-                  <AvatarImage src={issueData?.user?.avatar_url || "/logo-colored.png"} />
+                  <AvatarImage src={issueData?.user?.avatar_url || "/logo-light.png"} />
                   <AvatarFallback>{(issueData?.user?.name || "-").charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <span>{issueData?.user?.name || "未知用户"}</span>
@@ -323,4 +323,3 @@ export default function ViewIssueDialog({
     </Dialog>
   )
 }
-

@@ -1,3 +1,5 @@
+import { b64decode } from "@/utils/common"
+
 export interface AvailableCommand {
   name: string
   description: string
@@ -22,6 +24,108 @@ export interface AvailableCommands {
 }
 
 export type TaskStreamStatus = "inited" | "executing" | "waiting" | "finished" | "error"
+
+export interface TaskUserInputAttachment {
+  url: string
+  filename: string
+}
+
+export interface TaskUserInputPayload {
+  content: string
+  attachments: TaskUserInputAttachment[]
+}
+
+export type TaskUserInput = string | TaskUserInputPayload
+
+const TASK_IMAGE_ATTACHMENT_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "jpep",
+  "gif",
+  "webp",
+  "bmp",
+  "svg",
+  "avif",
+])
+
+export function isTaskImageAttachment(filename: string) {
+  const match = filename.toLowerCase().match(/\.([^./\\]+)$/)
+  return !!match && TASK_IMAGE_ATTACHMENT_EXTENSIONS.has(match[1])
+}
+
+function fallbackFilenameFromUrl(url: string, index: number) {
+  const fallbackName = `附件 ${index + 1}`
+  try {
+    const parsedUrl = new URL(url)
+    const name = parsedUrl.pathname.split("/").filter(Boolean).pop()
+    return name ? decodeURIComponent(name) : fallbackName
+  } catch {
+    try {
+      const name = url.split("?")[0]?.split("/").filter(Boolean).pop()
+      return name ? decodeURIComponent(name) : fallbackName
+    } catch {
+      return fallbackName
+    }
+  }
+}
+
+function normalizeAttachments(attachments: unknown): TaskUserInputAttachment[] {
+  if (!Array.isArray(attachments)) {
+    return []
+  }
+
+  return attachments
+    .map((attachment, index) => {
+      if (!attachment || typeof attachment !== "object" || Array.isArray(attachment)) {
+        return null
+      }
+
+      const maybeAttachment = attachment as Partial<TaskUserInputAttachment>
+      const url = typeof maybeAttachment.url === "string" ? maybeAttachment.url.trim() : ""
+      if (!url) {
+        return null
+      }
+
+      const filename = typeof maybeAttachment.filename === "string" && maybeAttachment.filename.trim() !== ""
+        ? maybeAttachment.filename
+        : fallbackFilenameFromUrl(url, index)
+
+      return { url, filename }
+    })
+    .filter((attachment): attachment is TaskUserInputAttachment => attachment !== null)
+}
+
+export function normalizeTaskUserInput(input: TaskUserInput): TaskUserInputPayload {
+  if (typeof input === "string") {
+    return {
+      content: input,
+      attachments: [],
+    }
+  }
+
+  return {
+    content: typeof input.content === "string" ? input.content : "",
+    attachments: normalizeAttachments(input.attachments),
+  }
+}
+
+export function parseTaskUserInputPayload(decoded: string): TaskUserInputPayload {
+  const parsed = JSON.parse(decoded) as unknown
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Invalid user-input payload")
+  }
+
+  const maybePayload = parsed as Partial<TaskUserInputPayload>
+  if (typeof maybePayload.content !== "string" || !Array.isArray(maybePayload.attachments)) {
+    throw new Error("Invalid user-input payload")
+  }
+
+  return normalizeTaskUserInput({
+    content: b64decode(maybePayload.content),
+    attachments: maybePayload.attachments,
+  })
+}
 
 export enum RepoFileEntryMode {
   RepoEntryModeUnspecified = 0,

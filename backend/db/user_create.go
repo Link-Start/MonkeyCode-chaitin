@@ -19,12 +19,14 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/gitidentity"
 	"github.com/chaitin/MonkeyCode/backend/db/host"
 	"github.com/chaitin/MonkeyCode/backend/db/image"
+	"github.com/chaitin/MonkeyCode/backend/db/mcpupstream"
 	"github.com/chaitin/MonkeyCode/backend/db/model"
 	"github.com/chaitin/MonkeyCode/backend/db/project"
 	"github.com/chaitin/MonkeyCode/backend/db/projectcollaborator"
 	"github.com/chaitin/MonkeyCode/backend/db/projectissue"
 	"github.com/chaitin/MonkeyCode/backend/db/projectissuecomment"
 	"github.com/chaitin/MonkeyCode/backend/db/task"
+	"github.com/chaitin/MonkeyCode/backend/db/taskmodelswitch"
 	"github.com/chaitin/MonkeyCode/backend/db/team"
 	"github.com/chaitin/MonkeyCode/backend/db/teamgroup"
 	"github.com/chaitin/MonkeyCode/backend/db/teamgroupmember"
@@ -306,6 +308,21 @@ func (_c *UserCreate) AddTasks(v ...*Task) *UserCreate {
 	return _c.AddTaskIDs(ids...)
 }
 
+// AddTaskModelSwitchIDs adds the "task_model_switches" edge to the TaskModelSwitch entity by IDs.
+func (_c *UserCreate) AddTaskModelSwitchIDs(ids ...uuid.UUID) *UserCreate {
+	_c.mutation.AddTaskModelSwitchIDs(ids...)
+	return _c
+}
+
+// AddTaskModelSwitches adds the "task_model_switches" edges to the TaskModelSwitch entity.
+func (_c *UserCreate) AddTaskModelSwitches(v ...*TaskModelSwitch) *UserCreate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddTaskModelSwitchIDs(ids...)
+}
+
 // AddGitIdentityIDs adds the "git_identities" edge to the GitIdentity entity by IDs.
 func (_c *UserCreate) AddGitIdentityIDs(ids ...uuid.UUID) *UserCreate {
 	_c.mutation.AddGitIdentityIDs(ids...)
@@ -409,6 +426,21 @@ func (_c *UserCreate) AddGitBots(v ...*GitBot) *UserCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddGitBotIDs(ids...)
+}
+
+// AddMcpUpstreamIDs adds the "mcp_upstreams" edge to the MCPUpstream entity by IDs.
+func (_c *UserCreate) AddMcpUpstreamIDs(ids ...uuid.UUID) *UserCreate {
+	_c.mutation.AddMcpUpstreamIDs(ids...)
+	return _c
+}
+
+// AddMcpUpstreams adds the "mcp_upstreams" edges to the MCPUpstream entity.
+func (_c *UserCreate) AddMcpUpstreams(v ...*MCPUpstream) *UserCreate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddMcpUpstreamIDs(ids...)
 }
 
 // AddTeamMemberIDs adds the "team_members" edge to the TeamMember entity by IDs.
@@ -771,6 +803,22 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.TaskModelSwitchesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TaskModelSwitchesTable,
+			Columns: []string{user.TaskModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	if nodes := _c.mutation.GitIdentitiesIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -887,6 +935,22 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		edge.Target.Fields = specE.Fields
 		if specE.ID.Value != nil {
 			edge.Target.Fields = append(edge.Target.Fields, specE.ID)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.McpUpstreamsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.McpUpstreamsTable,
+			Columns: []string{user.McpUpstreamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mcpupstream.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}

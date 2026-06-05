@@ -23,6 +23,7 @@ import "ace-builds/src-noconflict/mode-css"
 import "ace-builds/src-noconflict/mode-sql"
 import "ace-builds/src-noconflict/mode-sh"
 import "ace-builds/src-noconflict/mode-dockerfile"
+import "@/utils/ace-theme"
 import dayjs from "dayjs"
 
 type TreeEntry = DomainProjectTreeEntry
@@ -97,12 +98,12 @@ const getFileIcon = (entry: TreeEntry, isOpen?: boolean, loading?: boolean) => {
   switch (entry.mode) {
     case FileMode.DIRECTORY:
       return isOpen
-        ? <IconFolderOpen className="h-4 w-4 text-amber-500 shrink-0" />
-        : <IconFolder className="h-4 w-4 text-amber-500 shrink-0" />
+        ? <IconFolderOpen className="h-4 w-4 text-primary shrink-0" />
+        : <IconFolder className="h-4 w-4 text-primary shrink-0" />
     case FileMode.SYMLINK:
       return <IconFileSymlink className="h-4 w-4 text-muted-foreground shrink-0" />
     case FileMode.SUBMODULE:
-      return <IconGitBranch className="h-4 w-4 text-amber-500 shrink-0" />
+      return <IconGitBranch className="h-4 w-4 text-primary shrink-0" />
     case FileMode.REGULAR:
     case FileMode.EXECUTABLE:
     default:
@@ -233,8 +234,12 @@ export const ProjectFileManager = ({ project, onFileSelect, onLoaded, className 
   const [loading, setLoading] = useState(true)
   const [branches, setBranches] = useState<DomainBranch[]>([])
   const [selectedBranch, setSelectedBranch] = useState<string>('')
+  const [branchResolved, setBranchResolved] = useState(false)
+  const [branchProjectId, setBranchProjectId] = useState<string>('')
   const projectIdRef = useRef(project?.id)
   projectIdRef.current = project?.id
+  const selectedBranchRef = useRef(selectedBranch)
+  selectedBranchRef.current = selectedBranch
   const isMountedRef = useRef(true)
 
   // 文件内容对话框状态
@@ -253,8 +258,11 @@ export const ProjectFileManager = ({ project, onFileSelect, onLoaded, className 
       setLoading(false)
       return
     }
+    if (!branchResolved) return
+    if (branchProjectId !== project.id) return
 
     const requestedProjectId = project.id
+    const requestedBranch = selectedBranch
     setLoading(true)
     await apiRequest('v1UsersProjectsTreeDetail', {
       recursive: false,
@@ -263,30 +271,44 @@ export const ProjectFileManager = ({ project, onFileSelect, onLoaded, className 
     }, [project?.id], (resp) => {
       // 忽略过期响应：切换 project 后，旧请求可能晚于新请求返回；或组件已卸载
       if (!isMountedRef.current || projectIdRef.current !== requestedProjectId) return
+      if (selectedBranchRef.current !== requestedBranch) return
       if (resp.code === 0) {
         setEntries(sortEntries(resp.data || []))
       } else {
         setEntries([])
       }
     })
+    if (!isMountedRef.current || projectIdRef.current !== requestedProjectId) return
+    if (selectedBranchRef.current !== requestedBranch) return
     setLoading(false)
     onLoaded?.()
-  }, [project?.id, onLoaded, selectedBranch])
+  }, [project?.id, onLoaded, selectedBranch, branchProjectId, branchResolved])
 
   // 获取分支列表
   useEffect(() => {
     const fetchBranches = async () => {
-      if (!project?.git_identity_id || !project?.full_name) {
+      if (!project?.id || !project?.git_identity_id || !project?.full_name) {
         setBranches([])
+        setSelectedBranch('')
+        setBranchProjectId(project?.id || '')
+        setBranchResolved(true)
         return
       }
 
+      const requestedProjectId = project.id
       const encodedRepoName = encodeURIComponent(project.full_name)
+      setBranches([])
+      setSelectedBranch('')
+      setEntries([])
+      setLoading(true)
+      setBranchProjectId('')
+      setBranchResolved(false)
 
       await apiRequest('v1UsersGitIdentitiesBranchesDetail', {}, [project.git_identity_id, encodedRepoName], (resp) => {
+        if (projectIdRef.current !== requestedProjectId) return
         if (resp.code === 0 && resp.data) {
           setBranches(resp.data)
-          if (resp.data.length > 0 && !selectedBranch) {
+          if (resp.data.length > 0) {
             const branchNames = resp.data.map((b: DomainBranch) => b.name || '').filter(Boolean)
             let defaultBranch = ''
             if (branchNames.includes('main')) {
@@ -299,11 +321,17 @@ export const ProjectFileManager = ({ project, onFileSelect, onLoaded, className 
             setSelectedBranch(defaultBranch)
           }
         }
+        setBranchProjectId(requestedProjectId)
+        setBranchResolved(true)
+      }, () => {
+        if (projectIdRef.current !== requestedProjectId) return
+        setBranchProjectId(requestedProjectId)
+        setBranchResolved(true)
       })
     }
 
     fetchBranches()
-  }, [project?.git_identity_id, project?.full_name])
+  }, [project?.id, project?.git_identity_id, project?.full_name])
 
   useEffect(() => {
     isMountedRef.current = true
@@ -321,13 +349,15 @@ export const ProjectFileManager = ({ project, onFileSelect, onLoaded, className 
     
     await apiRequest('v1UsersProjectsTreeBlobDetail', {
       path: entry.path || '',
+      ref: selectedBranch || undefined,
     }, [project?.id], (resp) => {
+      if (selectedBranchRef.current !== selectedBranch) return
       if (resp.code === 0 && resp.data?.content) {
         setFileContent(b64decode(resp.data?.content))
       }
     })
     setFileLoading(false)
-  }, [project?.id])
+  }, [project?.id, selectedBranch])
 
   // 处理文件点击
   const handleFileClick = useCallback((entry: TreeEntry) => {

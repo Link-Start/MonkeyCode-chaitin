@@ -23,6 +23,7 @@ type AuthHandler struct {
 	config         *config.Config
 	logger         *slog.Logger
 	usecase        domain.UserUsecase
+	teamUsecase    domain.TeamGroupUserUsecase
 	redis          *redis.Client
 	authMiddleware *middleware.AuthMiddleware
 	captcha        *captcha.Captcha
@@ -34,6 +35,7 @@ func NewAuthHandler(i *do.Injector) (*AuthHandler, error) {
 	cfg := do.MustInvoke[*config.Config](i)
 	logger := do.MustInvoke[*slog.Logger](i)
 	usecase := do.MustInvoke[domain.UserUsecase](i)
+	teamUsecase := do.MustInvoke[domain.TeamGroupUserUsecase](i)
 	redisClient := do.MustInvoke[*redis.Client](i)
 	auth := do.MustInvoke[*middleware.AuthMiddleware](i)
 	targetActive := do.MustInvoke[*middleware.TargetActiveMiddleware](i)
@@ -43,6 +45,7 @@ func NewAuthHandler(i *do.Injector) (*AuthHandler, error) {
 		config:         cfg,
 		logger:         logger.With("module", "auth.handler"),
 		usecase:        usecase,
+		teamUsecase:    teamUsecase,
 		redis:          redisClient,
 		authMiddleware: auth,
 		captcha:        captchaSvc,
@@ -56,14 +59,16 @@ func NewAuthHandler(i *do.Injector) (*AuthHandler, error) {
 	v1.PUT("/passwords/reset", web.BindHandler(h.ResetPassword))
 
 	// 密码登录
-	v1.POST("/password-login", web.BindHandler(h.PasswordLogin))
-	v1.PUT("/passwords/change", web.BindHandler(h.ChangePassword), auth.Check())
-	v1.GET("/status", web.BaseHandler(h.Status), auth.Check())
+	v1.POST("/password-login", web.BindHandler(h.PasswordLogin), targetActive.TargetActive())
+	v1.PUT("", web.BindHandler(h.Update), auth.Auth(), targetActive.TargetActive())
+	v1.PUT("/passwords/change", web.BindHandler(h.ChangePassword), auth.Check(), targetActive.TargetActive())
+	v1.GET("/status", web.BaseHandler(h.Status), auth.Check(), targetActive.TargetActive())
 	v1.POST("/logout", web.BaseHandler(h.Logout), auth.Auth(), targetActive.TargetActive())
+	v1.GET("/members", web.BindHandler(h.MemberList), auth.Auth(), targetActive.TargetActive())
 
 	// 邮箱绑定接口
 	v1.PUT("/email/bind-request", web.BindHandler(h.SendBindEmailVerification), auth.Auth(), targetActive.TargetActive())
-	v1.GET("/email/verify", web.BindHandler(h.VerifyBindEmail))
+	v1.GET("/email/verify", web.BindHandler(h.VerifyBindEmail), targetActive.TargetActive())
 
 	return h, nil
 }
@@ -102,6 +107,91 @@ func (h *AuthHandler) PasswordLogin(c *web.Context, req domain.TeamLoginReq) err
 	return c.Success(user)
 }
 
+// Update 更新用户信息
+//
+//	@Summary		更新用户信息
+//	@Description	更新用户昵称和头像
+//	@Tags			【用户】用户
+//	@Accept			multipart/form-data
+//	@Produce		json
+//	@Security		MonkeyCodeAIAuth
+//	@Param			name		formData	string	false	"昵称"
+//	@Param			avatar_url	formData	string	false	"OSS 头像地址"
+//	@Success		200			{object}	web.Resp{data=domain.UpdateUserResp}
+//	@Router			/api/v1/users [put]
+func (h *AuthHandler) Update(c *web.Context, req domain.UpdateUserReq) error {
+	user := middleware.GetUser(c)
+	if user == nil {
+		return errcode.ErrUnauthorized
+	}
+
+	updated, err := h.usecase.Update(c.Request().Context(), user.ID, req.AvatarURL, req)
+	if err != nil {
+		h.logger.ErrorContext(c.Request().Context(), "update user failed", "error", err, "user_id", user.ID)
+		return err
+	}
+
+	return c.Success(domain.UpdateUserResp{
+		User:    updated,
+		Message: "success",
+		Success: true,
+	})
+}
+
+// MemberList 获取当前用户所在团队的普通成员列表
+//
+//	@Summary		获取团队成员列表
+//	@Description	获取当前用户所在团队的普通成员列表
+//	@Tags			【用户】用户
+//	@Accept			json
+//	@Produce		json
+//	@Security		MonkeyCodeAIAuth
+//	@Success		200	{object}	web.Resp{data=domain.TeamMembersResp}	"成功"
+//	@Failure		401	{object}	web.Resp								"未授权"
+//	@Failure		500	{object}	web.Resp								"服务器内部错误"
+//	@Router			/api/v1/users/members [get]
+func (h *AuthHandler) MemberList(c *web.Context, _ domain.UserMemberListReq) error {
+	user := middleware.GetUser(c)
+	if user == nil {
+		return errcode.ErrUnauthorized
+	}
+
+	teamInfo, err := h.usecase.GetUserWithTeams(c.Request().Context(), user.ID)
+	if err != nil {
+		return err
+	}
+
+	users := make(domain.TeamMembersResp, 0)
+	seen := make(map[uuid.UUID]struct{})
+	for _, team := range teamInfo.Teams {
+		teamUser := &domain.TeamUser{
+			User: user,
+			Team: &domain.Team{
+				ID:   team.TeamID,
+				Name: team.TeamName,
+			},
+		}
+		resp, err := h.teamUsecase.MemberList(c.Request().Context(), teamUser, &domain.MemberListReq{
+			Role: consts.TeamMemberRoleUser,
+		})
+		if err != nil {
+			return err
+		}
+		for _, member := range resp.Members {
+			if member.User == nil {
+				continue
+			}
+			if _, ok := seen[member.User.ID]; ok {
+				continue
+			}
+			seen[member.User.ID] = struct{}{}
+			users = append(users, member.User)
+		}
+	}
+
+	return c.Success(users)
+}
+
 // ChangePassword 修改密码接口
 //
 //	@Summary		修改密码
@@ -116,6 +206,10 @@ func (h *AuthHandler) PasswordLogin(c *web.Context, req domain.TeamLoginReq) err
 func (h *AuthHandler) ChangePassword(c *web.Context, req domain.ChangePasswordReq) error {
 	ctx := c.Request().Context()
 
+	if err := req.Validate(); err != nil {
+		return err
+	}
+
 	user := middleware.GetUser(c)
 	if user == nil {
 		return errcode.ErrUnauthorized
@@ -123,7 +217,7 @@ func (h *AuthHandler) ChangePassword(c *web.Context, req domain.ChangePasswordRe
 
 	err := h.usecase.ChangePassword(ctx, user.ID, &req, false)
 	if err != nil {
-		h.logger.ErrorContext(ctx, "change password failed", "error", err)
+		h.logger.ErrorContext(ctx, "change password failed", "userID", user.ID, "error", err)
 		return errcode.ErrChangePasswordFailed
 	}
 
@@ -201,6 +295,9 @@ func (h *AuthHandler) Status(c *web.Context) error {
 //	@Router			/api/v1/users/passwords/reset-request [put]
 func (h *AuthHandler) SendResetPasswordEmail(c *web.Context, req domain.ResetUserPasswordEmailReq) error {
 	ctx := c.Request().Context()
+	if err := req.Validate(); err != nil {
+		return err
+	}
 	if !h.captcha.ValidateToken(ctx, req.CaptchaToken) {
 		return errcode.ErrForbidden
 	}
@@ -208,7 +305,7 @@ func (h *AuthHandler) SendResetPasswordEmail(c *web.Context, req domain.ResetUse
 	err := h.usecase.SendResetPasswordEmail(ctx, &req)
 	if err != nil {
 		h.logger.ErrorContext(ctx, "send reset password email failed", "error", err)
-		return errcode.ErrInternalServer
+		return err
 	}
 
 	return c.Success(nil)
@@ -279,41 +376,45 @@ func (h *AuthHandler) GetAccountInfo(c *web.Context, req domain.GetAccountInfoRe
 //	@Success		200	{object}	web.Resp{}
 //	@Router			/api/v1/users/passwords/reset [put]
 func (h *AuthHandler) ResetPassword(c *web.Context, req domain.ResetUserPasswordReq) error {
+	if err := req.Validate(); err != nil {
+		return err
+	}
 	// 重置前检查 redis 里的 Key
 	key := fmt.Sprintf("reset_password_token:%s", req.Token)
 	userID, err := h.redis.Get(c.Request().Context(), key).Result()
 	if err != nil {
-		h.logger.ErrorContext(c.Request().Context(), "get redis key failed", "error", err)
-		return errcode.ErrResetPasswordFailed
+		h.logger.ErrorContext(c.Request().Context(), "get redis key failed", "token", req.Token, "error", err)
+		return errcode.ErrResetPasswordFailed.Wrap(err)
 	}
 	id, err := uuid.Parse(userID)
 	if err != nil {
-		h.logger.ErrorContext(c.Request().Context(), "invalid token", "error", err)
-		return errcode.ErrResetPasswordFailed
+		h.logger.ErrorContext(c.Request().Context(), "invalid token", "userID", userID, "error", err)
+		return errcode.ErrResetPasswordFailed.Wrap(err)
 	}
 
 	// 不允许从这个接口重置管理员的密码
 	teamUser, err := h.usecase.GetUserWithTeams(c.Request().Context(), id)
 	if err != nil {
-		return err
+		return errcode.ErrDatabaseQuery.Wrap(err)
 	}
 	if teamUser.User.Role == consts.UserRoleEnterprise {
-		return errcode.ErrResetPasswordFailed
+		h.logger.ErrorContext(c.Request().Context(), "enterprise not allowed to change password", "userID", userID)
+		return errcode.ErrEnterpriseResetPasswordDenied
 	}
 
 	err = h.usecase.ChangePassword(c.Request().Context(), id, &domain.ChangePasswordReq{NewPassword: req.NewPassword}, true)
 	if err != nil {
-		h.logger.ErrorContext(c.Request().Context(), "change password failed", "error", err)
+		h.logger.ErrorContext(c.Request().Context(), "change password failed", "userID", userID, "error", err)
 		return err
 	}
 
 	// 重置后清除 redis 里的 key
 	err = h.redis.Del(c.Request().Context(), key).Err()
 	if err != nil {
-		h.logger.ErrorContext(c.Request().Context(), "delete redis key failed", "error", err)
+		h.logger.ErrorContext(c.Request().Context(), "delete redis key failed", "userID", userID, "error", err)
 		return errcode.ErrResetPasswordFailed.Wrap(err)
 	}
-	h.logger.InfoContext(c.Request().Context(), "delete redis key success", "key", key)
+	h.logger.InfoContext(c.Request().Context(), "delete redis key success", "userID", userID, "key", key)
 
 	if err := h.authMiddleware.Session.Trunc(c.Request().Context(), consts.MonkeyCodeAISession, id); err != nil {
 		return err

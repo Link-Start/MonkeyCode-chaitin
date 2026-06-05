@@ -72,6 +72,7 @@ type TTL struct {
 // VirtualMachine 虚拟机信息
 type VirtualMachine struct {
 	ID            string               `json:"id"`
+	AccessToken   string               `json:"access_token,omitempty"`
 	EnvironmentID string               `json:"environment_id"`
 	HostID        string               `json:"host_id"`
 	Hostname      string               `json:"hostname"`
@@ -133,6 +134,7 @@ type CreateVirtualMachineReq struct {
 	Memory              uint64         `json:"memory"`
 	InstallCodingAgents bool           `json:"install_coding_agents"`
 	Envs                []string       `json:"envs,omitempty"`
+	LogStore            string         `json:"log_store,omitempty"`
 }
 
 // Git 仓库信息
@@ -278,6 +280,14 @@ type CheckTokenReq struct {
 	MachineID string `json:"machine_id"`
 }
 
+type GetTaskLogStoreReq struct {
+	TaskID uuid.UUID `json:"task_id" validate:"required"`
+}
+
+type GetTaskLogStoreResp struct {
+	LogStore string `json:"log_store"`
+}
+
 // TokenUser token 中的用户信息
 type TokenUser struct {
 	ID        string     `json:"id"`
@@ -299,6 +309,7 @@ type Token struct {
 	User        *TokenUser `json:"user"`
 	ParentToken string     `json:"parent_token"`
 	Token       string     `json:"token"`
+	AccessToken string     `json:"access_token,omitempty"`
 	TaskID      uuid.UUID  `json:"task_id"`
 	SessionID   string     `json:"session_id"`
 	RemoteIP    string     `json:"remote_ip"`
@@ -359,6 +370,7 @@ type AskUserQuestionResponse struct {
 	RequestId   string `json:"request_id,omitempty"`
 	AnswersJson string `json:"answers_json,omitempty"`
 	Cancelled   bool   `json:"cancelled,omitempty"`
+	LogStore    string `json:"log_store,omitempty"`
 }
 
 // ApplyWebClientIPReq 同步 Web 客户端 IP 请求
@@ -374,6 +386,11 @@ type GetTaskStreamIPsReq struct {
 // GetTaskStreamIPsResp 获取任务 WebSocket 连接 IP 响应
 type GetTaskStreamIPsResp struct {
 	IPs []string `json:"ips"`
+}
+
+// BatchGetVmIDsByEnvIDsReq 批量查询 environmentID -> vmID 映射请求
+type BatchGetVmIDsByEnvIDsReq struct {
+	EnvIDs []string `json:"env_ids" validate:"required,max=100"`
 }
 
 // ==================== Repo 操作类型 ====================
@@ -490,9 +507,11 @@ type RepoFileDiff struct {
 
 // RestartTaskReq 重启任务请求
 type RestartTaskReq struct {
-	ID          uuid.UUID `json:"id"`
-	RequestId   string    `json:"request_id,omitempty"`
-	LoadSession bool      `json:"load_session"`
+	ID              uuid.UUID            `json:"id"`
+	RequestId       string               `json:"request_id,omitempty"`
+	LoadSession     bool                 `json:"load_session"`
+	ExecutionConfig *TaskExecutionConfig `json:"execution_config,omitempty"`
+	LogStore        string               `json:"log_store,omitempty"`
 }
 
 // RestartTaskResp 重启任务响应
@@ -518,9 +537,16 @@ type TaskReq struct {
 
 // Task 任务信息
 type Task struct {
-	ID    uuid.UUID `json:"id"`
-	Text  string    `json:"text"`
-	Image string    `json:"image"`
+	ID          uuid.UUID    `json:"id"`
+	Text        string       `json:"text"`
+	Attachments []Attachment `json:"attachments,omitempty"`
+	Image       string       `json:"image"`
+	LogStore    string       `json:"log_store,omitempty"`
+}
+
+type Attachment struct {
+	URL      string `json:"url"`
+	Filename string `json:"filename"`
 }
 
 // ==================== CreateTask 类型 ====================
@@ -546,8 +572,16 @@ type LLM struct {
 
 // ConfigFile 配置文件
 type ConfigFile struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Path    string  `json:"path"`
+	Content string  `json:"content"`
+	Mode    *uint32 `json:"mode,omitempty"`
+}
+
+// TaskExecutionConfig 任务运行配置
+type TaskExecutionConfig struct {
+	Envs        map[string]string `json:"envs,omitempty"`
+	ConfigFiles []ConfigFile      `json:"config_files,omitempty"`
+	McpServers  []McpServerConfig `json:"mcp_servers,omitempty"`
 }
 
 // McpHttpHeader MCP HTTP 头
@@ -573,11 +607,13 @@ type CreateTaskReq struct {
 	VMID         string            `json:"vm_id"`
 	SystemPrompt string            `json:"system_prompt,omitempty"`
 	Text         string            `json:"text,omitempty"`
+	Attachments  []Attachment      `json:"attachments,omitempty"`
 	LLM          LLM               `json:"llm,omitzero"`
 	CodingAgent  CodingAgent       `json:"coding_agent,omitempty"`
 	Configs      []ConfigFile      `json:"configs,omitzero"`
 	McpConfigs   []McpServerConfig `json:"mcp_configs,omitzero"`
 	Env          map[string]string `json:"env,omitempty"`
+	LogStore     string            `json:"log_store,omitempty"`
 }
 
 // ==================== VirtualMachine 查询类型 ====================

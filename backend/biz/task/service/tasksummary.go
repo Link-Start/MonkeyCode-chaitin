@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/samber/do"
@@ -18,10 +20,9 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/consts"
 	"github.com/chaitin/MonkeyCode/backend/db"
 	"github.com/chaitin/MonkeyCode/backend/db/task"
-	"github.com/chaitin/MonkeyCode/backend/domain"
 	"github.com/chaitin/MonkeyCode/backend/pkg/delayqueue"
 	"github.com/chaitin/MonkeyCode/backend/pkg/llm"
-	"github.com/chaitin/MonkeyCode/backend/pkg/loki"
+	"github.com/chaitin/MonkeyCode/backend/pkg/tasklog"
 )
 
 var (
@@ -30,27 +31,43 @@ var (
 
 // TaskSummaryService 任务摘要生成服务
 type TaskSummaryService struct {
-	cfg          *config.Config
-	db           *db.Client
-	loki         *loki.Client
-	llm          *llm.Client
-	summaryQueue *delayqueue.TaskSummaryQueue
-	logger       *slog.Logger
-	taskRepo     domain.TaskRepo
+	cfg                *config.Config
+	db                 *db.Client
+	llm                *llm.Client
+	summaryQueue       *delayqueue.TaskSummaryQueue
+	logger             *slog.Logger
+	conversationReader ConversationReader
 
 	// 生命周期管理
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
+type tasklogGateway interface {
+	QueryTurns(ctx context.Context, taskID uuid.UUID, taskCreatedAt time.Time, cursor string, limit int, store consts.LogStore) (*tasklog.QueryTurnsResp, error)
+}
+
+type ConversationReader interface {
+	Fetch(ctx context.Context, taskID uuid.UUID, createdAt time.Time, store consts.LogStore, initialContent string, maxRounds int) ([]llm.Message, error)
+}
+
+type tasklogConversationReader struct {
+	gateway tasklogGateway
+	logger  *slog.Logger
+}
+
+func newTasklogConversationReader(gateway tasklogGateway, logger *slog.Logger) *tasklogConversationReader {
+	return &tasklogConversationReader{gateway: gateway, logger: logger}
+}
+
 // NewTaskSummaryService 创建任务摘要生成服务
 func NewTaskSummaryService(i *do.Injector) (*TaskSummaryService, error) {
 	cfg := do.MustInvoke[*config.Config](i)
 	d := do.MustInvoke[*db.Client](i)
-	lok := do.MustInvoke[*loki.Client](i)
+	tlg := do.MustInvoke[*tasklog.Gateway](i)
 	sq := do.MustInvoke[*delayqueue.TaskSummaryQueue](i)
 	l := do.MustInvoke[*slog.Logger](i)
-	tr := do.MustInvoke[domain.TaskRepo](i)
+	logger := l.With("module", "TaskSummaryService")
 
 	// 使用 task_summary 自己的 LLM 配置，不依赖全局 LLM Client
 	llmClient := llm.NewClient(llm.Config{
@@ -61,13 +78,12 @@ func NewTaskSummaryService(i *do.Injector) (*TaskSummaryService, error) {
 	})
 
 	s := &TaskSummaryService{
-		cfg:          cfg,
-		db:           d,
-		loki:         lok,
-		llm:          llmClient,
-		summaryQueue: sq,
-		logger:       l.With("module", "TaskSummaryService"),
-		taskRepo:     tr,
+		cfg:                cfg,
+		db:                 d,
+		llm:                llmClient,
+		summaryQueue:       sq,
+		logger:             logger,
+		conversationReader: newTasklogConversationReader(tlg, logger),
 	}
 
 	// 启动消费者
@@ -145,7 +161,7 @@ func (s *TaskSummaryService) GenerateSummaryNow(ctx context.Context, taskID stri
 		return "", fmt.Errorf("failed to get task: %w", err)
 	}
 
-	conversation, err := s.fetchConversation(ctx, taskID, t.CreatedAt)
+	conversation, err := s.fetchConversation(ctx, taskUUID, t.CreatedAt, normalizeSummaryLogStore(t.LogStore), t.Content)
 	if err != nil {
 		if errors.Is(err, errNoConversation) {
 			return "", nil
@@ -233,9 +249,9 @@ func (s *TaskSummaryService) handleJob(ctx context.Context, job *delayqueue.Job[
 	}
 
 	createdAt := t.CreatedAt
-	logger.DebugContext(ctx, "fetching conversation from loki", "created_at", createdAt)
+	logger.DebugContext(ctx, "fetching conversation", "created_at", createdAt)
 
-	conversation, err := s.fetchConversation(ctx, taskID, createdAt)
+	conversation, err := s.fetchConversation(ctx, taskUUID, createdAt, normalizeSummaryLogStore(t.LogStore), t.Content)
 	if err != nil {
 		if errors.Is(err, errNoConversation) {
 			logger.InfoContext(ctx, "no conversation found, skip")
@@ -261,81 +277,123 @@ func (s *TaskSummaryService) handleJob(ctx context.Context, job *delayqueue.Job[
 	return nil
 }
 
-// fetchConversation 从 Loki 获取历史对话，返回消息数组
-func (s *TaskSummaryService) fetchConversation(ctx context.Context, taskID string, createdAt time.Time) ([]llm.Message, error) {
-	var messages []llm.Message
-
-	taskUUID, err := uuid.Parse(taskID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse task id: %w", err)
+func (s *TaskSummaryService) fetchConversation(ctx context.Context, taskID uuid.UUID, createdAt time.Time, store consts.LogStore, initialContent string) ([]llm.Message, error) {
+	if s.conversationReader == nil {
+		return nil, errors.New("task summary conversation reader is nil")
+	}
+	maxRounds := s.cfg.TaskSummary.MaxRounds
+	if maxRounds <= 0 {
+		maxRounds = 3
 	}
 
-	t, err := s.taskRepo.GetByID(ctx, taskUUID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get task: %w", err)
+	return s.conversationReader.Fetch(ctx, taskID, createdAt, store, initialContent, maxRounds)
+}
+
+func (r *tasklogConversationReader) Fetch(ctx context.Context, taskID uuid.UUID, createdAt time.Time, store consts.LogStore, initialContent string, maxRounds int) ([]llm.Message, error) {
+	if r.gateway == nil {
+		return nil, errors.New("tasklog gateway is nil")
 	}
-	messages = append(messages, llm.Message{Role: "user", Content: t.Content})
+	if maxRounds <= 0 {
+		maxRounds = 3
+	}
+	const pageSize = 20
 
-	agentMsg := []string{}
-	_, err = s.loki.History(ctx, taskID, createdAt, func(entries []loki.LogEntry) {
-		for _, entry := range entries {
-			if entry.Line == "" {
+	var chunks []*tasklog.TurnChunk
+	userRoundCount := 0
+	cursor := ""
+
+	for {
+		resp, err := r.gateway.QueryTurns(ctx, taskID, createdAt, cursor, pageSize, store)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch task log history: %w", err)
+		}
+		if resp == nil {
+			break
+		}
+
+		stopPaging := false
+		for _, chunk := range resp.Chunks {
+			if chunk == nil {
 				continue
 			}
-
-			s.logger.DebugContext(ctx, "loki entry", "entry", entry.Line)
-
-			var lokiEnt lokiEntry
-			if err := json.Unmarshal([]byte(entry.Line), &lokiEnt); err != nil {
-				s.logger.ErrorContext(ctx, "failed to unmarshal loki entry", "task_id", taskID, "error", err)
-				continue
+			if (chunk.Event == "user-input" || chunk.Event == "reply-question") && userRoundCount >= maxRounds {
+				stopPaging = true
+				break
 			}
-
-			if lokiEnt.Data == "" {
-				continue
-			}
-
-			decoded, err := base64.StdEncoding.DecodeString(lokiEnt.Data)
-			if err != nil {
-				s.logger.ErrorContext(ctx, "failed to decode base64 data", "task_id", taskID, "error", err)
-				continue
-			}
-
-			switch lokiEnt.Event {
-			case "user-input", "reply-question":
-				var userInputText string
-				var ur userReply
-				if err := json.Unmarshal(decoded, &ur); err != nil {
-					userInputText = string(decoded)
-				} else {
-					userInputText = ur.AnswersJSON
-				}
-
-				if len(agentMsg) > 0 {
-					agentContent := strings.Join(agentMsg, "")
-					messages = append(messages, llm.Message{Role: "assistant", Content: agentContent})
-					agentMsg = []string{}
-				}
-
-				messages = append(messages, llm.Message{Role: "user", Content: userInputText})
-
-			case "task-running":
-				var taskMsg wsData
-				if err := json.Unmarshal(decoded, &taskMsg); err != nil {
-					continue
-				}
-				if taskMsg.Update.SessionUpdate == "agent_message_chunk" {
-					agentMsg = append(agentMsg, taskMsg.Update.Content.Text)
-				}
+			chunks = append(chunks, chunk)
+			if chunk.Event == "user-input" || chunk.Event == "reply-question" {
+				userRoundCount++
 			}
 		}
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch loki history: %w", err)
+
+		if stopPaging || userRoundCount >= maxRounds || !resp.HasMore || resp.NextCursor == "" {
+			break
+		}
+		cursor = resp.NextCursor
 	}
 
-	if len(messages) == 0 {
-		return nil, errNoConversation
+	return buildSummaryConversation(ctx, r.logger, taskID, chunks, userRoundCount, maxRounds, initialContent)
+}
+
+func buildSummaryConversation(ctx context.Context, logger *slog.Logger, taskID uuid.UUID, chunks []*tasklog.TurnChunk, userRoundCount, maxRounds int, initialContent string) ([]llm.Message, error) {
+	sort.Slice(chunks, func(i, j int) bool {
+		a := chunks[i]
+		b := chunks[j]
+		if a == nil {
+			return b != nil
+		}
+		if b == nil {
+			return false
+		}
+		return a.Timestamp < b.Timestamp
+	})
+
+	var messages []llm.Message
+
+	agentMsg := []string{}
+	for _, chunk := range chunks {
+		if chunk == nil || len(chunk.Data) == 0 {
+			continue
+		}
+
+		switch chunk.Event {
+		case "user-input":
+			userInputText := userInputContent(chunk.Data)
+
+			if len(agentMsg) > 0 {
+				agentContent := strings.Join(agentMsg, "")
+				messages = append(messages, llm.Message{Role: "assistant", Content: agentContent})
+				agentMsg = []string{}
+			}
+
+			messages = append(messages, llm.Message{Role: "user", Content: userInputText})
+
+		case "reply-question":
+			var userInputText string
+			var ur userReply
+			if decodeJSONPayload(chunk.Data, &ur) {
+				userInputText = ur.AnswersJSON
+			} else {
+				userInputText = string(chunk.Data)
+			}
+
+			if len(agentMsg) > 0 {
+				agentContent := strings.Join(agentMsg, "")
+				messages = append(messages, llm.Message{Role: "assistant", Content: agentContent})
+				agentMsg = []string{}
+			}
+
+			messages = append(messages, llm.Message{Role: "user", Content: userInputText})
+
+		case "task-running":
+			var taskMsg wsData
+			if !decodeJSONPayload(chunk.Data, &taskMsg) {
+				continue
+			}
+			if taskMsg.Update.SessionUpdate == "agent_message_chunk" {
+				agentMsg = append(agentMsg, taskMsg.Update.Content.Text)
+			}
+		}
 	}
 
 	if len(agentMsg) > 0 {
@@ -343,18 +401,88 @@ func (s *TaskSummaryService) fetchConversation(ctx context.Context, taskID strin
 		messages = append(messages, llm.Message{Role: "assistant", Content: agentContent})
 	}
 
-	s.logger.DebugContext(ctx, "conversation", "messages_count", messages)
+	initialContent = strings.TrimSpace(initialContent)
+	if userRoundCount < maxRounds && initialContent != "" {
+		messages = append([]llm.Message{{Role: "user", Content: initialContent}}, messages...)
+	}
+
+	if len(messages) == 0 {
+		return nil, errNoConversation
+	}
+
+	if logger != nil {
+		logger.DebugContext(ctx, "task summary conversation", "task_id", taskID, "messages_count", len(messages), "conversation", formatSummaryConversation(messages))
+	}
 	return messages, nil
+}
+
+func formatSummaryConversation(messages []llm.Message) []map[string]any {
+	conversation := make([]map[string]any, 0, len(messages))
+	for i, msg := range messages {
+		conversation = append(conversation, map[string]any{
+			"index":   i,
+			"role":    msg.Role,
+			"content": msg.Content,
+		})
+	}
+	return conversation
+}
+
+func decodeJSONPayload(data []byte, v any) bool {
+	if err := json.Unmarshal(data, v); err == nil {
+		return true
+	}
+	decoded, err := base64.StdEncoding.DecodeString(string(data))
+	if err != nil {
+		return false
+	}
+	return json.Unmarshal(decoded, v) == nil
+}
+
+func userInputContent(data []byte) string {
+	if content, ok := parseUserInputPayload(data); ok {
+		return content
+	}
+	decoded, err := base64.StdEncoding.DecodeString(string(data))
+	if err == nil {
+		if content, ok := parseUserInputPayload(decoded); ok {
+			return content
+		}
+	}
+	return string(data)
+}
+
+func parseUserInputPayload(data []byte) (string, bool) {
+	var stored userInputStoragePayload
+	if err := json.Unmarshal(data, &stored); err == nil && stored.Encoding == "plaintext" {
+		return stored.Content, true
+	}
+
+	var payload userInputPayload
+	if err := json.Unmarshal(data, &payload); err == nil && (len(payload.Content) > 0 || len(payload.Attachments) > 0) {
+		return string(payload.Content), true
+	}
+	return "", false
+}
+
+func normalizeSummaryLogStore(store *consts.LogStore) consts.LogStore {
+	if store == nil || strings.TrimSpace(string(*store)) == "" {
+		return consts.LogStoreLoki
+	}
+	return *store
 }
 
 // generateSummary 调用 LLM 生成摘要
 func (s *TaskSummaryService) generateSummary(ctx context.Context, conversation []llm.Message) (string, error) {
-	systemPrompt := `你是一个对话标题生成器，专门为用户与 AI 助手的对话生成简短、具体的标题。你只输出标题本身，不做任何解释。`
-
 	maxChars := s.cfg.TaskSummary.MaxChars
 	if maxChars <= 0 {
 		maxChars = 300
 	}
+	if summary, ok := fallbackSummaryFromConversation(conversation, maxChars); ok {
+		return summary, nil
+	}
+
+	systemPrompt := `你是一个对话标题生成器，专门为用户与 AI 助手的对话生成简短、具体的标题。你只输出标题本身，不做任何解释。`
 
 	userPrompt := fmt.Sprintf(`请根据以上对话，总结用户的核心意图，生成一个简短标题。
 
@@ -362,11 +490,14 @@ func (s *TaskSummaryService) generateSummary(ctx context.Context, conversation [
 - 不超过%d字
 - 不要标点结尾
 - 只输出标题，不要解释
+- 只根据用户的实质需求生成标题，不要根据示例、助手回复或运行状态编造需求
+- 如果早期输入为空泛或无意义，但后续用户消息补充了明确需求，以后续明确需求为准
 - 重点关注用户想要完成什么目标，而不是 AI 问了什么问题
 - 标题要具体，让人一看就知道用户想做什么
   - 如果是开发任务：说明做的是什么应用/功能（如"开发五子棋游戏"）
   - 如果是问问题：说明问的是什么问题（如"React Hooks 如何管理状态"）
   - 如果是修 bug：说明修的是什么问题（如"修复用户登录失败问题"）
+- 中英文之间要加空格（如"修复 React 组件的 bug"而不是"修复React组件的bug"）
 - 如果对话无实质内容，就用最近一条用户输入作为标题`, maxChars)
 
 	messages := []llm.Message{
@@ -385,4 +516,51 @@ func (s *TaskSummaryService) generateSummary(ctx context.Context, conversation [
 	}
 
 	return strings.TrimSpace(resp.Content), nil
+}
+
+func fallbackSummaryFromConversation(conversation []llm.Message, maxChars int) (string, bool) {
+	userInputs := make([]string, 0, len(conversation))
+	for _, msg := range conversation {
+		if msg.Role == "user" {
+			content := strings.TrimSpace(msg.Content)
+			if content != "" {
+				userInputs = append(userInputs, content)
+			}
+		}
+	}
+	if len(userInputs) == 0 {
+		return "", false
+	}
+	for _, input := range userInputs {
+		if !isLowInformationInput(input) {
+			return "", false
+		}
+	}
+	return truncateSummary(userInputs[len(userInputs)-1], maxChars), true
+}
+
+func isLowInformationInput(input string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(input))
+	normalized = strings.Trim(normalized, " \t\r\n.!?。！？~～,，")
+	switch normalized {
+	case "hi", "hello", "hey", "你好", "您好", "嗨", "哈喽", "hello there", "ok", "okay", "嗯", "嗯嗯", "额":
+		return true
+	}
+	for _, r := range normalized {
+		if unicode.IsLetter(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func truncateSummary(s string, maxChars int) string {
+	if maxChars <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= maxChars {
+		return s
+	}
+	return string(runes[:maxChars])
 }

@@ -4,6 +4,7 @@ import type {
   AvailableCommands,
   TaskPlan,
 } from "./task-shared"
+import { parseTaskUserInputPayload, type TaskUserInputPayload } from "./task-shared"
 
 export type TaskMessageHandlerStatus = "inited" | "connected" | "finished" | "error"
 
@@ -29,6 +30,10 @@ export interface TaskMessageHandlerState {
   messages: MessageType[]
   plan: TaskPlan
   availableCommands: AvailableCommands
+  contextUsage: {
+    size: number | null
+    used: number | null
+  }
   historyCursor: TaskHistoryCursorState
 }
 
@@ -45,6 +50,10 @@ export class TaskMessageHandler {
     availableCommands: {
       commands: [],
       version: 0,
+    },
+    contextUsage: {
+      size: null,
+      used: null,
     },
     historyCursor: {
       cursor: null,
@@ -68,6 +77,10 @@ export class TaskMessageHandler {
       availableCommands: {
         commands: [],
         version: 0,
+      },
+      contextUsage: {
+        size: null,
+        used: null,
       },
       historyCursor: {
         cursor: null,
@@ -117,6 +130,9 @@ export class TaskMessageHandler {
         ...this.state.availableCommands,
         commands: [...this.state.availableCommands.commands],
       },
+      contextUsage: {
+        ...this.state.contextUsage,
+      },
       historyCursor: {
         ...this.state.historyCursor,
       },
@@ -136,12 +152,15 @@ export class TaskMessageHandler {
     return JSON.parse(b64decode(data))
   }
 
-  private applyUserInput(data: any, timestamp: number) {
+  private applyUserInput(data: TaskUserInputPayload, timestamp: number) {
     const newMessage: MessageType = {
       id: this.createMessageId(),
       time: timestamp,
       role: "user",
-      data: { content: data },
+      data: {
+        content: data.content,
+        attachments: data.attachments,
+      },
       type: "user_input",
     }
     this.state.messages.push(newMessage)
@@ -316,6 +335,38 @@ export class TaskMessageHandler {
     }
   }
 
+  private applyAlertMessage(text: string, level: "info" | "warning", timestamp: number) {
+    const newMessage: MessageType = {
+      id: this.createMessageId(),
+      time: timestamp,
+      role: "agent",
+      type: "alert_message",
+      data: { text, level },
+    }
+
+    this.state.messages.push(newMessage)
+  }
+
+  private applyLLMCallRetry(data: any, timestamp: number) {
+    const update = data.update ?? {}
+    const errorMessage = update.message || "未知错误"
+    const text = typeof update.attempt === "number"
+      ? `模型调用失败，正在重试第 ${update.attempt} 次：${errorMessage}`
+      : `模型调用失败，正在重试：${errorMessage}`
+
+    this.applyAlertMessage(text, "warning", timestamp)
+  }
+
+  private applyCompactStatus(data: any, timestamp: number) {
+    const status = data.update?.status
+
+    if (status === "started") {
+      this.applyAlertMessage("启动上下文压缩", "info", timestamp)
+    } else if (status === "ended") {
+      this.applyAlertMessage("上下文压缩完成", "info", timestamp)
+    }
+  }
+
   private applyACPEvent(data: any, timestamp: number) {
     const messageType = data.update.sessionUpdate
     switch (messageType) {
@@ -343,7 +394,20 @@ export class TaskMessageHandler {
           }
         }
         break
+      case "usage_update":
+        this.state.contextUsage = {
+          size: typeof data.update.size === "number" ? data.update.size : this.state.contextUsage.size,
+          used: typeof data.update.used === "number" ? data.update.used : this.state.contextUsage.used,
+        }
+        break
+      case "llm_call_retry":
+        this.applyLLMCallRetry(data, timestamp)
+        break
+      case "compact_status":
+        this.applyCompactStatus(data, timestamp)
+        break
       default:
+        console.warn("TaskMessageHandler: unknown ACP sessionUpdate", data)
         break
     }
   }
@@ -382,7 +446,11 @@ export class TaskMessageHandler {
     switch (chunk.event) {
       case "user-input":
         if (typeof chunk.data !== "string") return
-        this.applyUserInput(b64decode(chunk.data), timestamp)
+        try {
+          this.applyUserInput(parseTaskUserInputPayload(b64decode(chunk.data)), timestamp)
+        } catch (error) {
+          console.error("TaskMessageHandler: invalid user-input payload", error)
+        }
         break
       case "user-cancel":
         this.applyUserCancel(timestamp)

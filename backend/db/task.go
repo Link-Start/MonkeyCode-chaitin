@@ -10,6 +10,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/chaitin/MonkeyCode/backend/consts"
+	"github.com/chaitin/MonkeyCode/backend/db/gittask"
 	"github.com/chaitin/MonkeyCode/backend/db/task"
 	"github.com/chaitin/MonkeyCode/backend/db/user"
 	"github.com/google/uuid"
@@ -30,12 +31,18 @@ type Task struct {
 	SubType consts.TaskSubType `json:"sub_type,omitempty"`
 	// Content holds the value of the "content" field.
 	Content string `json:"content,omitempty"`
+	// Title holds the value of the "title" field.
+	Title string `json:"title,omitempty"`
 	// Summary holds the value of the "summary" field.
 	Summary string `json:"summary,omitempty"`
 	// Status holds the value of the "status" field.
 	Status consts.TaskStatus `json:"status,omitempty"`
+	// LogStore holds the value of the "log_store" field.
+	LogStore *consts.LogStore `json:"log_store,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
+	// LastActiveAt holds the value of the "last_active_at" field.
+	LastActiveAt time.Time `json:"last_active_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// CompletedAt holds the value of the "completed_at" field.
@@ -50,17 +57,21 @@ type Task struct {
 type TaskEdges struct {
 	// ProjectTasks holds the value of the project_tasks edge.
 	ProjectTasks []*ProjectTask `json:"project_tasks,omitempty"`
+	// GitTasks holds the value of the git_tasks edge.
+	GitTasks *GitTask `json:"git_tasks,omitempty"`
 	// User holds the value of the user edge.
 	User *User `json:"user,omitempty"`
 	// Vms holds the value of the vms edge.
 	Vms []*VirtualMachine `json:"vms,omitempty"`
 	// GitBotTasks holds the value of the git_bot_tasks edge.
 	GitBotTasks []*GitBotTask `json:"git_bot_tasks,omitempty"`
+	// ModelSwitches holds the value of the model_switches edge.
+	ModelSwitches []*TaskModelSwitch `json:"model_switches,omitempty"`
 	// TaskVms holds the value of the task_vms edge.
 	TaskVms []*TaskVirtualMachine `json:"task_vms,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [5]bool
+	loadedTypes [7]bool
 }
 
 // ProjectTasksOrErr returns the ProjectTasks value or an error if the edge
@@ -72,12 +83,23 @@ func (e TaskEdges) ProjectTasksOrErr() ([]*ProjectTask, error) {
 	return nil, &NotLoadedError{edge: "project_tasks"}
 }
 
+// GitTasksOrErr returns the GitTasks value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e TaskEdges) GitTasksOrErr() (*GitTask, error) {
+	if e.GitTasks != nil {
+		return e.GitTasks, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: gittask.Label}
+	}
+	return nil, &NotLoadedError{edge: "git_tasks"}
+}
+
 // UserOrErr returns the User value or an error if the edge
 // was not loaded in eager-loading, or loaded but was not found.
 func (e TaskEdges) UserOrErr() (*User, error) {
 	if e.User != nil {
 		return e.User, nil
-	} else if e.loadedTypes[1] {
+	} else if e.loadedTypes[2] {
 		return nil, &NotFoundError{label: user.Label}
 	}
 	return nil, &NotLoadedError{edge: "user"}
@@ -86,7 +108,7 @@ func (e TaskEdges) UserOrErr() (*User, error) {
 // VmsOrErr returns the Vms value or an error if the edge
 // was not loaded in eager-loading.
 func (e TaskEdges) VmsOrErr() ([]*VirtualMachine, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[3] {
 		return e.Vms, nil
 	}
 	return nil, &NotLoadedError{edge: "vms"}
@@ -95,16 +117,25 @@ func (e TaskEdges) VmsOrErr() ([]*VirtualMachine, error) {
 // GitBotTasksOrErr returns the GitBotTasks value or an error if the edge
 // was not loaded in eager-loading.
 func (e TaskEdges) GitBotTasksOrErr() ([]*GitBotTask, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[4] {
 		return e.GitBotTasks, nil
 	}
 	return nil, &NotLoadedError{edge: "git_bot_tasks"}
 }
 
+// ModelSwitchesOrErr returns the ModelSwitches value or an error if the edge
+// was not loaded in eager-loading.
+func (e TaskEdges) ModelSwitchesOrErr() ([]*TaskModelSwitch, error) {
+	if e.loadedTypes[5] {
+		return e.ModelSwitches, nil
+	}
+	return nil, &NotLoadedError{edge: "model_switches"}
+}
+
 // TaskVmsOrErr returns the TaskVms value or an error if the edge
 // was not loaded in eager-loading.
 func (e TaskEdges) TaskVmsOrErr() ([]*TaskVirtualMachine, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[6] {
 		return e.TaskVms, nil
 	}
 	return nil, &NotLoadedError{edge: "task_vms"}
@@ -115,9 +146,9 @@ func (*Task) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case task.FieldKind, task.FieldSubType, task.FieldContent, task.FieldSummary, task.FieldStatus:
+		case task.FieldKind, task.FieldSubType, task.FieldContent, task.FieldTitle, task.FieldSummary, task.FieldStatus, task.FieldLogStore:
 			values[i] = new(sql.NullString)
-		case task.FieldDeletedAt, task.FieldCreatedAt, task.FieldUpdatedAt, task.FieldCompletedAt:
+		case task.FieldDeletedAt, task.FieldCreatedAt, task.FieldLastActiveAt, task.FieldUpdatedAt, task.FieldCompletedAt:
 			values[i] = new(sql.NullTime)
 		case task.FieldID, task.FieldUserID:
 			values[i] = new(uuid.UUID)
@@ -172,6 +203,12 @@ func (_m *Task) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Content = value.String
 			}
+		case task.FieldTitle:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field title", values[i])
+			} else if value.Valid {
+				_m.Title = value.String
+			}
 		case task.FieldSummary:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field summary", values[i])
@@ -184,11 +221,24 @@ func (_m *Task) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Status = consts.TaskStatus(value.String)
 			}
+		case task.FieldLogStore:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field log_store", values[i])
+			} else if value.Valid {
+				_m.LogStore = new(consts.LogStore)
+				*_m.LogStore = consts.LogStore(value.String)
+			}
 		case task.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
 			} else if value.Valid {
 				_m.CreatedAt = value.Time
+			}
+		case task.FieldLastActiveAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_active_at", values[i])
+			} else if value.Valid {
+				_m.LastActiveAt = value.Time
 			}
 		case task.FieldUpdatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -220,6 +270,11 @@ func (_m *Task) QueryProjectTasks() *ProjectTaskQuery {
 	return NewTaskClient(_m.config).QueryProjectTasks(_m)
 }
 
+// QueryGitTasks queries the "git_tasks" edge of the Task entity.
+func (_m *Task) QueryGitTasks() *GitTaskQuery {
+	return NewTaskClient(_m.config).QueryGitTasks(_m)
+}
+
 // QueryUser queries the "user" edge of the Task entity.
 func (_m *Task) QueryUser() *UserQuery {
 	return NewTaskClient(_m.config).QueryUser(_m)
@@ -233,6 +288,11 @@ func (_m *Task) QueryVms() *VirtualMachineQuery {
 // QueryGitBotTasks queries the "git_bot_tasks" edge of the Task entity.
 func (_m *Task) QueryGitBotTasks() *GitBotTaskQuery {
 	return NewTaskClient(_m.config).QueryGitBotTasks(_m)
+}
+
+// QueryModelSwitches queries the "model_switches" edge of the Task entity.
+func (_m *Task) QueryModelSwitches() *TaskModelSwitchQuery {
+	return NewTaskClient(_m.config).QueryModelSwitches(_m)
 }
 
 // QueryTaskVms queries the "task_vms" edge of the Task entity.
@@ -278,14 +338,25 @@ func (_m *Task) String() string {
 	builder.WriteString("content=")
 	builder.WriteString(_m.Content)
 	builder.WriteString(", ")
+	builder.WriteString("title=")
+	builder.WriteString(_m.Title)
+	builder.WriteString(", ")
 	builder.WriteString("summary=")
 	builder.WriteString(_m.Summary)
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Status))
 	builder.WriteString(", ")
+	if v := _m.LogStore; v != nil {
+		builder.WriteString("log_store=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))
+	builder.WriteString(", ")
+	builder.WriteString("last_active_at=")
+	builder.WriteString(_m.LastActiveAt.Format(time.ANSIC))
 	builder.WriteString(", ")
 	builder.WriteString("updated_at=")
 	builder.WriteString(_m.UpdatedAt.Format(time.ANSIC))

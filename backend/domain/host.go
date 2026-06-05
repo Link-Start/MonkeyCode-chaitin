@@ -12,6 +12,7 @@ import (
 	etypes "github.com/chaitin/MonkeyCode/backend/ent/types"
 	"github.com/chaitin/MonkeyCode/backend/pkg/cvt"
 	"github.com/chaitin/MonkeyCode/backend/pkg/taskflow"
+	"github.com/chaitin/MonkeyCode/backend/pkg/vmstatus"
 )
 
 // HostUsecase 主机业务逻辑接口
@@ -43,7 +44,12 @@ type HostRepo interface {
 	GetHost(ctx context.Context, uid uuid.UUID, id string) (*Host, error)
 	GetByID(ctx context.Context, id string) (*db.Host, error)
 	GetVirtualMachine(ctx context.Context, id string) (*db.VirtualMachine, error)
+	GetVirtualMachineByAccessToken(ctx context.Context, accessToken string) (*db.VirtualMachine, error)
 	GetVirtualMachineByEnvID(ctx context.Context, envID string) (*db.VirtualMachine, error)
+	// GetTaskIDByVMID 用 virtualmachine_id 直接查 task_virtualmachines 表拿 task_id，
+	// 避免 GetVirtualMachine + WithTasks + Edges.Tasks[0].ID 的绕路。VM 没绑任务返回空字符串（非错误）。
+	GetTaskIDByVMID(ctx context.Context, vmID string) (string, error)
+	BatchGetVmIDsByEnvironmentIDs(ctx context.Context, envIDs []string) (map[string]string, error)
 	GetVirtualMachineWithUser(ctx context.Context, uid uuid.UUID, id string) (*db.VirtualMachine, error)
 	CreateVirtualMachine(ctx context.Context, user *User, req *CreateVMReq, getRepoToken func(context.Context) (string, error), fn func(*db.Model, *db.Image) (*VirtualMachine, error)) (*VirtualMachine, error)
 	PastHourVirtualMachine(ctx context.Context) ([]*db.VirtualMachine, error)
@@ -75,6 +81,10 @@ type VmIdleInfo struct {
 	EnvID  string    `json:"env_id"`
 	TaskID string    `json:"task_id,omitempty"` // 关联的任务 ID，用于通知
 	Name   string    `json:"name,omitempty"`    // 任务名称，用于通知内容
+	// RecycleAt 是本次 Refresh 算出的预计回收时间。每次用户活动都会延长这个值，
+	// consumer 把它编进 RefID，让每个回收窗口都能产生不同的 dedup key（否则
+	// dispatcher 会按 (subID, eventType, RefID) 把同一 task 的后续推送全部静默）。
+	RecycleAt time.Time `json:"recycle_at"`
 }
 
 // VmExpireInfo VM 过期信息（手动创建的 VM）
@@ -136,6 +146,7 @@ type VMTerminalResizeData struct {
 // VirtualMachine 虚拟机
 type VirtualMachine struct {
 	ID              string                        `json:"id"`
+	AccessToken     string                        `json:"-"`
 	Hostname        string                        `json:"hostname"`
 	OS              string                        `json:"os"`
 	Cores           int32                         `json:"cores"`
@@ -167,34 +178,20 @@ func (v *VirtualMachine) From(vm *db.VirtualMachine) *VirtualMachine {
 	v.Version = vm.Version
 	v.EnvironmentID = vm.EnvironmentID
 	v.CreatedAt = vm.CreatedAt.Unix()
-
 	if vm.Conditions != nil {
 		v.Conditions = vm.Conditions.Conditions
-		if v.Status != taskflow.VirtualMachineStatusOnline {
-			v.Status = taskflow.VirtualMachineStatusPending
-			for _, cond := range vm.Conditions.Conditions {
-				switch cond.Type {
-				case etypes.ConditionTypeFailed:
-					v.Status = taskflow.VirtualMachineStatusOffline
-				case etypes.ConditionTypeHibernated:
-					v.Status = taskflow.VirtualMachineStatusHibernated
-				case etypes.ConditionTypeReady:
-					if time.Since(time.UnixMilli(cond.LastTransitionTime)) > 3*time.Minute {
-						v.Status = taskflow.VirtualMachineStatusOffline
-					}
-				}
-			}
-		}
 	}
+	v.Status = vmstatus.Resolve(vmstatus.Input{
+		Online:     v.Status == taskflow.VirtualMachineStatusOnline,
+		Conditions: v.Conditions,
+		IsRecycled: vm.IsRecycled,
+		CreatedAt:  vm.CreatedAt,
+		Now:        time.Now(),
+	})
 
-	if vm.IsRecycled {
-		v.Status = taskflow.VirtualMachineStatusOffline
-	}
-
-	switch vm.TTLKind {
-	case consts.CountDown:
-		v.LifeTimeSeconds = vm.TTL - (time.Now().Unix() - vm.CreatedAt.Unix())
-	case consts.Forever:
+	if vm.ExpiredAt != nil {
+		v.LifeTimeSeconds = int64(time.Until(*vm.ExpiredAt).Seconds())
+	} else {
 		v.LifeTimeSeconds = 0
 	}
 	if vm.Edges.Host != nil {

@@ -1,7 +1,5 @@
-import { ConstsCliName, ConstsTaskType, ConstsGitPlatform, ConstsOwnerType, type DomainProject, type DomainBranch } from "@/api/Api"
-import Icon from "@/components/common/Icon"
+import { ConstsCliName, ConstsTaskType, ConstsGitPlatform, type DomainProject, type DomainBranch } from "@/api/Api"
 import { useCommonData } from "@/components/console/data-provider"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -9,14 +7,15 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
-import { canUseModelBySubscription, getBrandFromModelName, getModelHealthBadge, getOwnerTypeBadge, getPublicModelMetaBadges, selectHost, selectImage, selectPreferredTaskModel } from "@/utils/common"
+import ModelSelect from "@/components/console/task/model-select"
+import { getTaskContentLimitErrorMessage, MAX_TASK_CONTENT_LENGTH } from "@/components/console/task/task-content-limit"
+import { TASK_PROMPT_PLACEHOLDER, selectHost, selectImage, selectPreferredTaskModel } from "@/utils/common"
 import { apiRequest } from "@/utils/requestUtils"
 import { IconSparkles } from "@tabler/icons-react"
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { TaskConcurrentLimitDialog } from "@/components/console/task/task-concurrent-limit-dialog"
-import { readStoredTaskDialogParams, writeStoredTaskDialogParams } from "@/components/console/task/task-dialog-params-storage"
 
 interface StartDevelopTaskDialogProps {
   open: boolean
@@ -39,9 +38,39 @@ export default function StartDevelopTaskDialog({
   const [userMessage, setUserMessage] = useState<string>('')
   const [selectedModelId, setSelectedModelId] = useState<string>('')
   const { images, models, hosts, subscription } = useCommonData()
+  const branchRequestIdRef = useRef(0)
+  const branchTouchedRef = useRef(false)
+  const prevOpenRef = useRef(false)
+  const selectedModel = useMemo(
+    () => models.find((model) => model.id === selectedModelId),
+    [models, selectedModelId]
+  )
+  const userMessageLength = userMessage.length
+  const userMessageTooLong = userMessageLength > MAX_TASK_CONTENT_LENGTH
+  const branchSourceKey = useMemo(() => {
+    if (!project?.id) return ""
+    return [
+      project.id,
+      project.platform,
+      project.git_identity_id || "",
+      project.full_name || "",
+      project.repo_url || "",
+    ].join(":")
+  }, [project?.id, project?.platform, project?.git_identity_id, project?.full_name, project?.repo_url])
 
-  const fetchBranches = async () => {
+  const selectBranch = (branch: string) => {
+    branchTouchedRef.current = true
+    setSelectedBranch(branch)
+  }
+
+  const fetchBranches = useCallback(async () => {
+    const requestId = ++branchRequestIdRef.current
+    branchTouchedRef.current = false
+
     if (!project?.git_identity_id || !project?.repo_url) {
+      setBranches([])
+      setBranchFetchFailed(false)
+      setLoadingBranches(false)
       return
     }
 
@@ -63,8 +92,10 @@ export default function StartDevelopTaskDialog({
       const escapedRepoFullName = project?.full_name || ''
       
       if (!escapedRepoFullName) {
-        setBranchFetchFailed(true)
-        setLoadingBranches(false)
+        if (requestId === branchRequestIdRef.current) {
+          setBranchFetchFailed(true)
+          setLoadingBranches(false)
+        }
         return
       }
 
@@ -72,79 +103,82 @@ export default function StartDevelopTaskDialog({
       const encodedRepoName = encodeURIComponent(escapedRepoFullName)
 
       await apiRequest('v1UsersGitIdentitiesBranchesDetail', {}, [project.git_identity_id, encodedRepoName], (resp) => {
+        if (requestId !== branchRequestIdRef.current) return
+
         if (resp.code === 0 && resp.data) {
           const branchList = resp.data.map((b: DomainBranch) => b.name || '').filter(Boolean)
           setBranches(branchList)
 
           if (branchList.length === 0) {
             setBranchFetchFailed(true)
-            setSelectedBranch('main')
+            if (!branchTouchedRef.current) {
+              setSelectedBranch('main')
+            }
             return
           }
           
-          // 优先选择 main 或 master，否则选择第一个
-          if (branchList.includes('main')) {
-            setSelectedBranch('main')
-          } else if (branchList.includes('master')) {
-            setSelectedBranch('master')
-          } else if (branchList.length > 0) {
-            setSelectedBranch(branchList[0])
+          if (!branchTouchedRef.current) {
+            // 优先选择 main 或 master，否则选择第一个
+            if (branchList.includes('main')) {
+              setSelectedBranch('main')
+            } else if (branchList.includes('master')) {
+              setSelectedBranch('master')
+            } else if (branchList.length > 0) {
+              setSelectedBranch(branchList[0])
+            }
           }
         } else {
           setBranchFetchFailed(true)
-          setSelectedBranch('main')
+          if (!branchTouchedRef.current) {
+            setSelectedBranch('main')
+          }
           toast.error('获取分支列表失败: ' + resp.message)
         }
       })
     } catch (error) {
       console.error('Fetch branches error:', error)
-      setBranchFetchFailed(true)
-      setSelectedBranch('main')
-      toast.error('获取分支列表失败')
+      if (requestId === branchRequestIdRef.current) {
+        setBranchFetchFailed(true)
+        if (!branchTouchedRef.current) {
+          setSelectedBranch('main')
+        }
+        toast.error('获取分支列表失败')
+      }
     } finally {
-      setLoadingBranches(false)
+      if (requestId === branchRequestIdRef.current) {
+        setLoadingBranches(false)
+      }
     }
-  }
+  }, [project?.git_identity_id, project?.repo_url, project?.platform, project?.full_name])
 
-  const prevOpenRef = useRef(false)
   useEffect(() => {
     if (open) {
       const justOpened = !prevOpenRef.current
       prevOpenRef.current = true
       if (justOpened) {
-        const storedParams = readStoredTaskDialogParams()
         setUserMessage('')
-        setSelectedModelId(
-          storedParams.modelId
-            && models.some((model) => model.id === storedParams.modelId)
-            && canUseModelBySubscription(models.find((model) => model.id === storedParams.modelId), subscription)
-            ? storedParams.modelId
-            : selectPreferredTaskModel(models, subscription)
-        )
+        setSelectedModelId(selectPreferredTaskModel(models, subscription))
         setSelectedBranch('main')
       }
-      fetchBranches()
     } else {
       prevOpenRef.current = false
+      branchRequestIdRef.current += 1
     }
-  }, [open, project, models, subscription])
-
-  const selectedModel = useMemo(
-    () => models.find((model) => model.id === selectedModelId),
-    [models, selectedModelId]
-  )
-  const selectedProModelDisabled = selectedModel?.access_level === "pro" && subscription?.plan !== "pro"
+  }, [open, models, subscription])
 
   useEffect(() => {
-    if (!selectedProModelDisabled) {
-      return
-    }
-    setSelectedModelId(selectPreferredTaskModel(models, subscription))
-  }, [models, selectedProModelDisabled, subscription])
+    if (!open || !branchSourceKey) return
+    fetchBranches()
+  }, [open, branchSourceKey, fetchBranches])
 
   const handleSubmit = async () => {
     if (!userMessage.trim()) {
       toast.error('请输入任务内容')
+      return
+    }
+
+    if (userMessageTooLong) {
+      toast.error(getTaskContentLimitErrorMessage())
       return
     }
 
@@ -162,12 +196,6 @@ export default function StartDevelopTaskDialog({
       toast.error('请选择大模型')
       return
     }
-
-    const storedParams = readStoredTaskDialogParams()
-    writeStoredTaskDialogParams({
-      ...storedParams,
-      modelId: selectedModelId,
-    })
 
     setSubmitting(true)
 
@@ -208,7 +236,7 @@ export default function StartDevelopTaskDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="flex flex-col">
         <DialogHeader>
           <DialogTitle>启动 AI 任务</DialogTitle>
         </DialogHeader>
@@ -233,12 +261,12 @@ export default function StartDevelopTaskDialog({
               ) : branchFetchFailed || branches.length === 0 ? (
                 <Input
                   value={selectedBranch}
-                  onChange={(e) => setSelectedBranch(e.target.value)}
+                  onChange={(e) => selectBranch(e.target.value)}
                   placeholder="请输入分支名称"
                   required
                 />
               ) : (
-                <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                <Select value={selectedBranch} onValueChange={selectBranch}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="请选择分支" />
                   </SelectTrigger>
@@ -255,40 +283,38 @@ export default function StartDevelopTaskDialog({
           )}
           <div className="space-y-2">
             <Label>大模型</Label>
-            <Select value={selectedModelId} onValueChange={setSelectedModelId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="选择大模型" />
-              </SelectTrigger>
-              <SelectContent>
-                {models.map((model) => (
-                  <SelectItem key={model.id} value={model.id || ""} disabled={!canUseModelBySubscription(model, subscription)}>
-                    <Icon name={getBrandFromModelName(model.model || '')} className="size-4" />
-                    {getModelHealthBadge(model)}
-                    {model.model}
-                    {model.is_default && <Badge>默认</Badge>}
-                    {model.owner?.type !== ConstsOwnerType.OwnerTypePublic && getOwnerTypeBadge(model.owner)}
-                    {getPublicModelMetaBadges(model)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ModelSelect
+              models={models}
+              selectedModel={selectedModel}
+              selectedModelId={selectedModelId}
+              setSelectedModelId={setSelectedModelId}
+              subscription={subscription}
+            />
           </div>
           <div className="space-y-2">
             <Label>任务内容</Label>
-            <Textarea
-              value={userMessage}
-              onChange={(e) => setUserMessage(e.target.value)}
-              placeholder="请输入任务内容"
-              rows={4}
-              className="resize-none break-all"
-            />
+            <div className="space-y-1">
+              <Textarea
+                value={userMessage}
+                onChange={(e) => setUserMessage(e.target.value)}
+                placeholder={TASK_PROMPT_PLACEHOLDER}
+                rows={4}
+                className="resize-none break-all"
+                aria-invalid={userMessageTooLong}
+              />
+              {userMessageTooLong && (
+                <div className="px-1 text-xs text-destructive">
+                  已超出 {userMessageLength - MAX_TASK_CONTENT_LENGTH} 字，最多 {MAX_TASK_CONTENT_LENGTH} 字，无法发送。
+                </div>
+              )}
+            </div>
           </div>
          </div>
          
          <DialogFooter>
           <Button 
             onClick={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || userMessageTooLong}
           >
             {submitting ? <Spinner /> : <IconSparkles className="size-4" />}
             开始对话

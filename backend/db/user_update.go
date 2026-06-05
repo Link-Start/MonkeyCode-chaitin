@@ -18,6 +18,7 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/gitidentity"
 	"github.com/chaitin/MonkeyCode/backend/db/host"
 	"github.com/chaitin/MonkeyCode/backend/db/image"
+	"github.com/chaitin/MonkeyCode/backend/db/mcpupstream"
 	"github.com/chaitin/MonkeyCode/backend/db/model"
 	"github.com/chaitin/MonkeyCode/backend/db/predicate"
 	"github.com/chaitin/MonkeyCode/backend/db/project"
@@ -25,6 +26,7 @@ import (
 	"github.com/chaitin/MonkeyCode/backend/db/projectissue"
 	"github.com/chaitin/MonkeyCode/backend/db/projectissuecomment"
 	"github.com/chaitin/MonkeyCode/backend/db/task"
+	"github.com/chaitin/MonkeyCode/backend/db/taskmodelswitch"
 	"github.com/chaitin/MonkeyCode/backend/db/team"
 	"github.com/chaitin/MonkeyCode/backend/db/teamgroup"
 	"github.com/chaitin/MonkeyCode/backend/db/teamgroupmember"
@@ -352,6 +354,21 @@ func (_u *UserUpdate) AddTasks(v ...*Task) *UserUpdate {
 	return _u.AddTaskIDs(ids...)
 }
 
+// AddTaskModelSwitchIDs adds the "task_model_switches" edge to the TaskModelSwitch entity by IDs.
+func (_u *UserUpdate) AddTaskModelSwitchIDs(ids ...uuid.UUID) *UserUpdate {
+	_u.mutation.AddTaskModelSwitchIDs(ids...)
+	return _u
+}
+
+// AddTaskModelSwitches adds the "task_model_switches" edges to the TaskModelSwitch entity.
+func (_u *UserUpdate) AddTaskModelSwitches(v ...*TaskModelSwitch) *UserUpdate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddTaskModelSwitchIDs(ids...)
+}
+
 // AddGitIdentityIDs adds the "git_identities" edge to the GitIdentity entity by IDs.
 func (_u *UserUpdate) AddGitIdentityIDs(ids ...uuid.UUID) *UserUpdate {
 	_u.mutation.AddGitIdentityIDs(ids...)
@@ -455,6 +472,21 @@ func (_u *UserUpdate) AddGitBots(v ...*GitBot) *UserUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.AddGitBotIDs(ids...)
+}
+
+// AddMcpUpstreamIDs adds the "mcp_upstreams" edge to the MCPUpstream entity by IDs.
+func (_u *UserUpdate) AddMcpUpstreamIDs(ids ...uuid.UUID) *UserUpdate {
+	_u.mutation.AddMcpUpstreamIDs(ids...)
+	return _u
+}
+
+// AddMcpUpstreams adds the "mcp_upstreams" edges to the MCPUpstream entity.
+func (_u *UserUpdate) AddMcpUpstreams(v ...*MCPUpstream) *UserUpdate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddMcpUpstreamIDs(ids...)
 }
 
 // AddTeamMemberIDs adds the "team_members" edge to the TeamMember entity by IDs.
@@ -696,6 +728,27 @@ func (_u *UserUpdate) RemoveTasks(v ...*Task) *UserUpdate {
 	return _u.RemoveTaskIDs(ids...)
 }
 
+// ClearTaskModelSwitches clears all "task_model_switches" edges to the TaskModelSwitch entity.
+func (_u *UserUpdate) ClearTaskModelSwitches() *UserUpdate {
+	_u.mutation.ClearTaskModelSwitches()
+	return _u
+}
+
+// RemoveTaskModelSwitchIDs removes the "task_model_switches" edge to TaskModelSwitch entities by IDs.
+func (_u *UserUpdate) RemoveTaskModelSwitchIDs(ids ...uuid.UUID) *UserUpdate {
+	_u.mutation.RemoveTaskModelSwitchIDs(ids...)
+	return _u
+}
+
+// RemoveTaskModelSwitches removes "task_model_switches" edges to TaskModelSwitch entities.
+func (_u *UserUpdate) RemoveTaskModelSwitches(v ...*TaskModelSwitch) *UserUpdate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveTaskModelSwitchIDs(ids...)
+}
+
 // ClearGitIdentities clears all "git_identities" edges to the GitIdentity entity.
 func (_u *UserUpdate) ClearGitIdentities() *UserUpdate {
 	_u.mutation.ClearGitIdentities()
@@ -841,6 +894,27 @@ func (_u *UserUpdate) RemoveGitBots(v ...*GitBot) *UserUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveGitBotIDs(ids...)
+}
+
+// ClearMcpUpstreams clears all "mcp_upstreams" edges to the MCPUpstream entity.
+func (_u *UserUpdate) ClearMcpUpstreams() *UserUpdate {
+	_u.mutation.ClearMcpUpstreams()
+	return _u
+}
+
+// RemoveMcpUpstreamIDs removes the "mcp_upstreams" edge to MCPUpstream entities by IDs.
+func (_u *UserUpdate) RemoveMcpUpstreamIDs(ids ...uuid.UUID) *UserUpdate {
+	_u.mutation.RemoveMcpUpstreamIDs(ids...)
+	return _u
+}
+
+// RemoveMcpUpstreams removes "mcp_upstreams" edges to MCPUpstream entities.
+func (_u *UserUpdate) RemoveMcpUpstreams(v ...*MCPUpstream) *UserUpdate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveMcpUpstreamIDs(ids...)
 }
 
 // ClearTeamMembers clears all "team_members" edges to the TeamMember entity.
@@ -1453,6 +1527,51 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.TaskModelSwitchesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TaskModelSwitchesTable,
+			Columns: []string{user.TaskModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedTaskModelSwitchesIDs(); len(nodes) > 0 && !_u.mutation.TaskModelSwitchesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TaskModelSwitchesTable,
+			Columns: []string{user.TaskModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TaskModelSwitchesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TaskModelSwitchesTable,
+			Columns: []string{user.TaskModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _u.mutation.GitIdentitiesCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -1786,6 +1905,51 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		edge.Target.Fields = specE.Fields
 		if specE.ID.Value != nil {
 			edge.Target.Fields = append(edge.Target.Fields, specE.ID)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.McpUpstreamsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.McpUpstreamsTable,
+			Columns: []string{user.McpUpstreamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mcpupstream.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedMcpUpstreamsIDs(); len(nodes) > 0 && !_u.mutation.McpUpstreamsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.McpUpstreamsTable,
+			Columns: []string{user.McpUpstreamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mcpupstream.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.McpUpstreamsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.McpUpstreamsTable,
+			Columns: []string{user.McpUpstreamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mcpupstream.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
@@ -2249,6 +2413,21 @@ func (_u *UserUpdateOne) AddTasks(v ...*Task) *UserUpdateOne {
 	return _u.AddTaskIDs(ids...)
 }
 
+// AddTaskModelSwitchIDs adds the "task_model_switches" edge to the TaskModelSwitch entity by IDs.
+func (_u *UserUpdateOne) AddTaskModelSwitchIDs(ids ...uuid.UUID) *UserUpdateOne {
+	_u.mutation.AddTaskModelSwitchIDs(ids...)
+	return _u
+}
+
+// AddTaskModelSwitches adds the "task_model_switches" edges to the TaskModelSwitch entity.
+func (_u *UserUpdateOne) AddTaskModelSwitches(v ...*TaskModelSwitch) *UserUpdateOne {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddTaskModelSwitchIDs(ids...)
+}
+
 // AddGitIdentityIDs adds the "git_identities" edge to the GitIdentity entity by IDs.
 func (_u *UserUpdateOne) AddGitIdentityIDs(ids ...uuid.UUID) *UserUpdateOne {
 	_u.mutation.AddGitIdentityIDs(ids...)
@@ -2352,6 +2531,21 @@ func (_u *UserUpdateOne) AddGitBots(v ...*GitBot) *UserUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.AddGitBotIDs(ids...)
+}
+
+// AddMcpUpstreamIDs adds the "mcp_upstreams" edge to the MCPUpstream entity by IDs.
+func (_u *UserUpdateOne) AddMcpUpstreamIDs(ids ...uuid.UUID) *UserUpdateOne {
+	_u.mutation.AddMcpUpstreamIDs(ids...)
+	return _u
+}
+
+// AddMcpUpstreams adds the "mcp_upstreams" edges to the MCPUpstream entity.
+func (_u *UserUpdateOne) AddMcpUpstreams(v ...*MCPUpstream) *UserUpdateOne {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddMcpUpstreamIDs(ids...)
 }
 
 // AddTeamMemberIDs adds the "team_members" edge to the TeamMember entity by IDs.
@@ -2593,6 +2787,27 @@ func (_u *UserUpdateOne) RemoveTasks(v ...*Task) *UserUpdateOne {
 	return _u.RemoveTaskIDs(ids...)
 }
 
+// ClearTaskModelSwitches clears all "task_model_switches" edges to the TaskModelSwitch entity.
+func (_u *UserUpdateOne) ClearTaskModelSwitches() *UserUpdateOne {
+	_u.mutation.ClearTaskModelSwitches()
+	return _u
+}
+
+// RemoveTaskModelSwitchIDs removes the "task_model_switches" edge to TaskModelSwitch entities by IDs.
+func (_u *UserUpdateOne) RemoveTaskModelSwitchIDs(ids ...uuid.UUID) *UserUpdateOne {
+	_u.mutation.RemoveTaskModelSwitchIDs(ids...)
+	return _u
+}
+
+// RemoveTaskModelSwitches removes "task_model_switches" edges to TaskModelSwitch entities.
+func (_u *UserUpdateOne) RemoveTaskModelSwitches(v ...*TaskModelSwitch) *UserUpdateOne {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveTaskModelSwitchIDs(ids...)
+}
+
 // ClearGitIdentities clears all "git_identities" edges to the GitIdentity entity.
 func (_u *UserUpdateOne) ClearGitIdentities() *UserUpdateOne {
 	_u.mutation.ClearGitIdentities()
@@ -2738,6 +2953,27 @@ func (_u *UserUpdateOne) RemoveGitBots(v ...*GitBot) *UserUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveGitBotIDs(ids...)
+}
+
+// ClearMcpUpstreams clears all "mcp_upstreams" edges to the MCPUpstream entity.
+func (_u *UserUpdateOne) ClearMcpUpstreams() *UserUpdateOne {
+	_u.mutation.ClearMcpUpstreams()
+	return _u
+}
+
+// RemoveMcpUpstreamIDs removes the "mcp_upstreams" edge to MCPUpstream entities by IDs.
+func (_u *UserUpdateOne) RemoveMcpUpstreamIDs(ids ...uuid.UUID) *UserUpdateOne {
+	_u.mutation.RemoveMcpUpstreamIDs(ids...)
+	return _u
+}
+
+// RemoveMcpUpstreams removes "mcp_upstreams" edges to MCPUpstream entities.
+func (_u *UserUpdateOne) RemoveMcpUpstreams(v ...*MCPUpstream) *UserUpdateOne {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveMcpUpstreamIDs(ids...)
 }
 
 // ClearTeamMembers clears all "team_members" edges to the TeamMember entity.
@@ -3380,6 +3616,51 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.TaskModelSwitchesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TaskModelSwitchesTable,
+			Columns: []string{user.TaskModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedTaskModelSwitchesIDs(); len(nodes) > 0 && !_u.mutation.TaskModelSwitchesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TaskModelSwitchesTable,
+			Columns: []string{user.TaskModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TaskModelSwitchesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TaskModelSwitchesTable,
+			Columns: []string{user.TaskModelSwitchesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskmodelswitch.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _u.mutation.GitIdentitiesCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -3713,6 +3994,51 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 		edge.Target.Fields = specE.Fields
 		if specE.ID.Value != nil {
 			edge.Target.Fields = append(edge.Target.Fields, specE.ID)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.McpUpstreamsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.McpUpstreamsTable,
+			Columns: []string{user.McpUpstreamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mcpupstream.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedMcpUpstreamsIDs(); len(nodes) > 0 && !_u.mutation.McpUpstreamsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.McpUpstreamsTable,
+			Columns: []string{user.McpUpstreamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mcpupstream.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.McpUpstreamsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.McpUpstreamsTable,
+			Columns: []string{user.McpUpstreamsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mcpupstream.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
