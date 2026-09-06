@@ -362,7 +362,14 @@ export function ModelsPage() {
 
   return (
     <section className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p
+          className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+          role="alert"
+        >
+          {error}
+        </p>
+      )}
       <Tabs
         className="gap-4"
         value={activeModelType}
