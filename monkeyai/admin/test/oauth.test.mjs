@@ -25,6 +25,18 @@ test("OAuth settings do not depend on crypto.randomUUID", async () => {
   assert.match(source, /createOAuthConnectionID\(\)/)
 })
 
+test("login method switches remain visible and persist with authentication settings", async () => {
+  const source = await readFile(
+    new URL("../src/pages/other-settings-page.tsx", import.meta.url),
+    "utf8"
+  )
+
+  assert.match(source, /pages\.otherSettings\.loginMethods\.password/)
+  assert.match(source, /pages\.otherSettings\.loginMethods\.emailCode/)
+  assert.match(source, /password_enabled: loginMethods\.passwordEnabled/)
+  assert.match(source, /email_code_enabled: loginMethods\.emailCodeEnabled/)
+})
+
 test("admin login lists configured OAuth providers and uses the admin flow", async () => {
   const [page, form] = await Promise.all([
     readFile(new URL("../src/pages/login-page.tsx", import.meta.url), "utf8"),
