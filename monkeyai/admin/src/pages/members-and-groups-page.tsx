@@ -1,5 +1,10 @@
-import { useEffect, useState, type FormEvent } from "react"
-import { Add01Icon, UserMultiple02Icon } from "@hugeicons/core-free-icons"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
+import {
+  Add01Icon,
+  Folder02Icon,
+  FolderIcon,
+  MoreHorizontalIcon,
+} from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { useTranslation } from "react-i18next"
 
@@ -8,12 +13,11 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
+  CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -22,17 +26,29 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
-import { useAuth } from "@/hooks/use-auth"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemFooter,
+  ItemGroup,
+  ItemMedia,
+  ItemSeparator,
+  ItemTitle,
+} from "@/components/ui/item"
+import { useAuth } from "@/hooks/use-auth"
 import { api } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 type User = {
   id: string
@@ -45,10 +61,13 @@ type User = {
   last_login_at?: string
 }
 
+type GroupID = "all" | User["role"]
+
 export function MembersAndGroupsPage() {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
   const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<User[]>([])
+  const [selectedGroupID, setSelectedGroupID] = useState<GroupID>("all")
   const [query, setQuery] = useState("")
   const [error, setError] = useState("")
   const [savingID, setSavingID] = useState("")
@@ -101,13 +120,16 @@ export function MembersAndGroupsPage() {
     }
   }
 
-  const normalizedQuery = query.trim().toLocaleLowerCase()
-  const visibleUsers = users.filter(
-    (user) =>
-      !normalizedQuery ||
-      user.name.toLocaleLowerCase().includes(normalizedQuery) ||
-      user.email.toLocaleLowerCase().includes(normalizedQuery)
-  )
+  const visibleUsers = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase()
+    return users.filter(
+      (user) =>
+        (selectedGroupID === "all" || user.role === selectedGroupID) &&
+        (!normalizedQuery ||
+          user.name.toLocaleLowerCase().includes(normalizedQuery) ||
+          user.email.toLocaleLowerCase().includes(normalizedQuery))
+    )
+  }, [query, selectedGroupID, users])
 
   const createUser = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -142,160 +164,225 @@ export function MembersAndGroupsPage() {
     }
   }
 
-  return (
-    <main className="flex flex-1 flex-col gap-6 p-4 pt-0 md:p-6 md:pt-0">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {t("pages.membersAndGroups.title")}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t("pages.membersAndGroups.description")}
-        </p>
-      </div>
+  const dateFormatter = new Intl.DateTimeFormat(
+    i18n.resolvedLanguage ?? i18n.language,
+    { dateStyle: "medium" }
+  )
+  const groups: Array<{ id: GroupID; label: string; count: number }> = [
+    {
+      id: "all",
+      label: t("pages.membersAndGroups.groupNames.rootGroup"),
+      count: users.length,
+    },
+    {
+      id: "admin",
+      label: t("pages.membersAndGroups.groupNames.administrators"),
+      count: users.filter((user) => user.role === "admin").length,
+    },
+    {
+      id: "user",
+      label: t("pages.membersAndGroups.membersTitle"),
+      count: users.filter((user) => user.role === "user").length,
+    },
+  ]
 
-      <Card>
-        <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <HugeiconsIcon icon={UserMultiple02Icon} strokeWidth={2} />
-              {t("pages.membersAndGroups.membersTitle")}
-            </CardTitle>
-            <CardDescription className="mt-1">
-              {t("pages.membersAndGroups.membersDescription")}
-            </CardDescription>
-          </div>
-          <div className="flex w-full gap-2 sm:w-auto">
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t("pages.membersAndGroups.searchMembersPlaceholder")}
-              aria-label={t("pages.membersAndGroups.searchMembers")}
-              className="min-w-0 flex-1 sm:w-64"
-            />
-            <Button
-              type="button"
-              className="cursor-pointer"
-              onClick={() => setCreateOpen(true)}
+  return (
+    <section className="flex flex-1 flex-col p-4 pt-px md:h-[calc(100svh-4rem)] md:min-h-0 md:flex-none md:overflow-hidden">
+      <div className="grid flex-1 gap-4 md:min-h-0 md:grid-cols-[minmax(14rem,1fr)_minmax(0,2fr)]">
+        <Card className="min-h-64 md:min-h-0">
+          <CardHeader>
+            <CardTitle>{t("pages.membersAndGroups.groupsTitle")}</CardTitle>
+          </CardHeader>
+          <CardContent className="min-h-0 flex-1 overflow-y-auto">
+            <ul
+              className="flex flex-col gap-1"
+              aria-label={t("pages.membersAndGroups.groupsTitle")}
             >
-              <HugeiconsIcon icon={Add01Icon} strokeWidth={2} />
-              添加成员
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {error && (
-            <p
-              className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-              role="alert"
-            >
-              {error}
-            </p>
-          )}
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>成员</TableHead>
-                <TableHead>角色</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>最近登录</TableHead>
-                <TableHead className="text-end">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visibleUsers.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar>
+              {groups.map((group, index) => (
+                <li key={group.id}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-pressed={selectedGroupID === group.id}
+                    className={cn(
+                      "w-full justify-start font-normal hover:bg-muted",
+                      index > 0 && "ps-8",
+                      selectedGroupID === group.id && "bg-muted"
+                    )}
+                    onClick={() => setSelectedGroupID(group.id)}
+                  >
+                    <HugeiconsIcon
+                      icon={group.id === "all" ? Folder02Icon : FolderIcon}
+                      strokeWidth={2}
+                    />
+                    <span className="truncate">{group.label}</span>
+                    <span className="ms-auto text-xs text-muted-foreground tabular-nums">
+                      {group.count}
+                    </span>
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+
+        <Card className="min-h-96 md:min-h-0">
+          <CardHeader className="gap-3">
+            <CardTitle>{t("pages.membersAndGroups.membersTitle")}</CardTitle>
+            <CardAction className="flex max-w-full items-center gap-2">
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t(
+                  "pages.membersAndGroups.searchMembersPlaceholder"
+                )}
+                aria-label={t("pages.membersAndGroups.searchMembers")}
+                className="h-8 w-40 min-w-0 sm:w-52"
+              />
+              <Button
+                type="button"
+                size="sm"
+                className="cursor-pointer"
+                onClick={() => setCreateOpen(true)}
+              >
+                <HugeiconsIcon icon={Add01Icon} strokeWidth={2} />
+                <span className="hidden lg:inline">添加成员</span>
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="min-h-0 flex-1 overflow-y-auto">
+            {error && (
+              <p
+                className="mb-1 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+                role="alert"
+              >
+                {error}
+              </p>
+            )}
+            <ItemGroup className="gap-2">
+              {visibleUsers.map((user) => {
+                const isDisabled = user.status === "disabled"
+                const joinedAt = new Date(user.joined_at)
+                const isCurrentUser = user.id === currentUser?.id
+
+                return (
+                  <Item
+                    key={user.id}
+                    role="listitem"
+                    size="sm"
+                    variant={isDisabled ? "muted" : "outline"}
+                    aria-busy={savingID === user.id}
+                  >
+                    <ItemMedia>
+                      <Avatar size="lg">
                         <AvatarImage src={user.avatar_url} alt={user.name} />
                         <AvatarFallback>{user.name.slice(0, 2)}</AvatarFallback>
                       </Avatar>
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{user.name}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {user.email}
-                        </p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {user.role === "admin" ? "管理员" : "成员"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        user.status === "active" ? "secondary" : "outline"
-                      }
-                    >
-                      {user.status === "active" ? "已启用" : "已停用"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {user.last_login_at
-                      ? new Intl.DateTimeFormat(undefined, {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        }).format(new Date(user.last_login_at))
-                      : "—"}
-                  </TableCell>
-                  <TableCell className="text-end">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="cursor-pointer"
-                        disabled={
-                          savingID === user.id || user.id === currentUser?.id
-                        }
-                        onClick={() => {
-                          if (user.role === "admin") {
-                            void updateUser(user, { role: "user" })
-                            return
+                    </ItemMedia>
+                    <ItemContent className="min-w-0">
+                      <ItemTitle className="max-w-full min-w-0">
+                        <span className="truncate font-medium">
+                          {user.name}
+                        </span>
+                        {isDisabled && (
+                          <Badge variant="outline">
+                            {t("pages.membersAndGroups.memberDisabled")}
+                          </Badge>
+                        )}
+                      </ItemTitle>
+                      <ItemDescription className="line-clamp-1 text-xs">
+                        {user.email}
+                      </ItemDescription>
+                    </ItemContent>
+                    <ItemActions className="ms-auto shrink-0">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              disabled={savingID === user.id}
+                              aria-label={t(
+                                "pages.membersAndGroups.memberActions",
+                                { member: user.name }
+                              )}
+                            />
                           }
-                          setRolePassword("")
-                          setRoleTarget(user)
-                        }}
-                      >
-                        {user.role === "admin" ? "取消管理员" : "设为管理员"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="cursor-pointer"
-                        disabled={
-                          savingID === user.id || user.id === currentUser?.id
-                        }
-                        onClick={() =>
-                          void updateUser(user, {
-                            status:
-                              user.status === "active" ? "disabled" : "active",
-                          })
-                        }
-                      >
-                        {user.status === "active"
-                          ? t("pages.membersAndGroups.disableMember")
-                          : t("pages.membersAndGroups.enableMember")}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                        >
+                          <HugeiconsIcon
+                            icon={MoreHorizontalIcon}
+                            strokeWidth={2}
+                          />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuGroup>
+                            <DropdownMenuItem
+                              disabled={isCurrentUser}
+                              onClick={() =>
+                                void updateUser(user, {
+                                  status: isDisabled ? "active" : "disabled",
+                                })
+                              }
+                            >
+                              {t(
+                                isDisabled
+                                  ? "pages.membersAndGroups.enableMember"
+                                  : "pages.membersAndGroups.disableMember"
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={isCurrentUser}
+                              onClick={() => {
+                                if (user.role === "admin") {
+                                  void updateUser(user, { role: "user" })
+                                  return
+                                }
+                                setRolePassword("")
+                                setRoleTarget(user)
+                              }}
+                            >
+                              {t(
+                                user.role === "admin"
+                                  ? "pages.membersAndGroups.removeAdministrator"
+                                  : "pages.membersAndGroups.makeAdministrator"
+                              )}
+                            </DropdownMenuItem>
+                          </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </ItemActions>
+                    <ItemSeparator className="my-0" />
+                    <ItemFooter className="text-xs text-muted-foreground">
+                      <span>
+                        {t("pages.membersAndGroups.joinedAt", {
+                          date: dateFormatter.format(joinedAt),
+                          day: joinedAt.getDate(),
+                          month: joinedAt.getMonth() + 1,
+                          year: joinedAt.getFullYear(),
+                        })}
+                      </span>
+                      <Badge variant="outline">
+                        {user.role === "admin"
+                          ? t(
+                              "pages.membersAndGroups.groupNames.administrators"
+                            )
+                          : t("pages.membersAndGroups.membersTitle")}
+                      </Badge>
+                    </ItemFooter>
+                  </Item>
+                )
+              })}
               {visibleUsers.length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="py-12 text-center text-muted-foreground"
-                  >
-                    {t("pages.membersAndGroups.noMembersFound")}
-                  </TableCell>
-                </TableRow>
+                <p className="py-12 text-center text-sm text-muted-foreground">
+                  {t("pages.membersAndGroups.noMembersFound")}
+                </p>
               )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </ItemGroup>
+          </CardContent>
+        </Card>
+      </div>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
@@ -452,6 +539,6 @@ export function MembersAndGroupsPage() {
           </form>
         </DialogContent>
       </Dialog>
-    </main>
+    </section>
   )
 }

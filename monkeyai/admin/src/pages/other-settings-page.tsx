@@ -51,10 +51,12 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {
   Field,
+  FieldContent,
   FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
+  FieldTitle,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
@@ -74,6 +76,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { useSkillTags } from "@/hooks/use-skill-tags"
 import { api } from "@/lib/api"
@@ -131,6 +134,11 @@ type OAuthConnection = {
   enabled: boolean
 }
 
+type LoginMethodSettings = {
+  passwordEnabled: boolean
+  emailCodeEnabled: boolean
+}
+
 type EmailSettings = {
   registrationEnabled: boolean
   senderName: string
@@ -174,6 +182,11 @@ type KnowledgeModelKind = "embeddingModel" | "rerankerModel"
 
 const INITIAL_OAUTH_CONNECTIONS: OAuthConnection[] = []
 
+const INITIAL_LOGIN_METHOD_SETTINGS: LoginMethodSettings = {
+  passwordEnabled: true,
+  emailCodeEnabled: false,
+}
+
 const INITIAL_EMAIL_SETTINGS: EmailSettings = {
   registrationEnabled: false,
   senderName: "Monkey AI",
@@ -207,6 +220,12 @@ export function OtherSettingsPage() {
   const [oauthDialogOpen, setOauthDialogOpen] = useState(false)
   const [oauthProvider, setOauthProvider] = useState<OAuthProvider>("github")
   const [oauthSaving, setOauthSaving] = useState(false)
+  const [loginMethodSettings, setLoginMethodSettings] = useState(
+    INITIAL_LOGIN_METHOD_SETTINGS
+  )
+  const [loginMethodSaving, setLoginMethodSaving] = useState<
+    keyof LoginMethodSettings | null
+  >(null)
   const [emailSettings, setEmailSettings] = useState(INITIAL_EMAIL_SETTINGS)
   const [savedEmailSettings, setSavedEmailSettings] = useState(
     INITIAL_EMAIL_SETTINGS
@@ -276,6 +295,16 @@ export function OtherSettingsPage() {
                 }
               })
             )
+            setLoginMethodSettings({
+              passwordEnabled:
+                typeof setting.value.password_enabled === "boolean"
+                  ? setting.value.password_enabled
+                  : INITIAL_LOGIN_METHOD_SETTINGS.passwordEnabled,
+              emailCodeEnabled:
+                typeof setting.value.email_code_enabled === "boolean"
+                  ? setting.value.email_code_enabled
+                  : INITIAL_LOGIN_METHOD_SETTINGS.emailCodeEnabled,
+            })
             const registrationEnabled = Boolean(
               setting.value.registration_enabled
             )
@@ -325,10 +354,13 @@ export function OtherSettingsPage() {
 
   const saveAuthentication = async (
     connections: OAuthConnection[],
-    registrationEnabled = savedEmailSettings.registrationEnabled
+    registrationEnabled = savedEmailSettings.registrationEnabled,
+    loginMethods = loginMethodSettings
   ) =>
     saveSetting("authentication", {
       registration_enabled: registrationEnabled,
+      password_enabled: loginMethods.passwordEnabled,
+      email_code_enabled: loginMethods.emailCodeEnabled,
       oauth_connections: connections.map((connection) => ({
         id: connection.id,
         provider: connection.provider,
@@ -422,6 +454,27 @@ export function OtherSettingsPage() {
     )
     if (await saveAuthentication(connections)) {
       setOauthConnections(connections)
+    }
+  }
+
+  const setLoginMethodEnabled = async (
+    key: keyof LoginMethodSettings,
+    enabled: boolean
+  ) => {
+    const nextSettings = { ...loginMethodSettings, [key]: enabled }
+    setLoginMethodSaving(key)
+    try {
+      if (
+        await saveAuthentication(
+          oauthConnections,
+          savedEmailSettings.registrationEnabled,
+          nextSettings
+        )
+      ) {
+        setLoginMethodSettings(nextSettings)
+      }
+    } finally {
+      setLoginMethodSaving(null)
     }
   }
 
@@ -1515,6 +1568,49 @@ export function OtherSettingsPage() {
           </CardAction>
         </CardHeader>
         <CardContent className="gap-6">
+          <FieldGroup className="gap-4">
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>
+                  {t("pages.otherSettings.loginMethods.password")}
+                </FieldTitle>
+                <FieldDescription>
+                  {t("pages.otherSettings.loginMethods.passwordDescription")}
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                checked={loginMethodSettings.passwordEnabled}
+                disabled={loginMethodSaving !== null}
+                onCheckedChange={(enabled) =>
+                  void setLoginMethodEnabled("passwordEnabled", enabled)
+                }
+                aria-label={t("pages.otherSettings.loginMethods.password")}
+                aria-busy={loginMethodSaving === "passwordEnabled"}
+              />
+            </Field>
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>
+                  {t("pages.otherSettings.loginMethods.emailCode")}
+                </FieldTitle>
+                <FieldDescription>
+                  {t("pages.otherSettings.loginMethods.emailCodeDescription")}
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                checked={loginMethodSettings.emailCodeEnabled}
+                disabled={loginMethodSaving !== null}
+                onCheckedChange={(enabled) =>
+                  void setLoginMethodEnabled("emailCodeEnabled", enabled)
+                }
+                aria-label={t("pages.otherSettings.loginMethods.emailCode")}
+                aria-busy={loginMethodSaving === "emailCodeEnabled"}
+              />
+            </Field>
+          </FieldGroup>
+
+          <Separator />
+
           <div className="flex flex-col gap-3">
             {oauthConnections.map((connection) => (
               <div
