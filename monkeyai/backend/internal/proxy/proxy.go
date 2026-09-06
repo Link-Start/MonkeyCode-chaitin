@@ -30,11 +30,13 @@ var endpoints = []struct {
 }
 
 type Target struct {
-	ModelID   string
-	UserID    string
-	SessionID string
-	BaseURL   string
-	APIKey    string
+	ModelID       string
+	UpstreamModel string
+	Protocol      string
+	UserID        string
+	SessionID     string
+	BaseURL       string
+	APIKey        string
 }
 
 // Resolver 根据代理凭据和请求模型返回真实上游配置。
@@ -143,11 +145,22 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		return
 	}
+	if target.Protocol != "" && target.Protocol != protocolForPath(r.URL.Path) {
+		http.Error(w, "模型协议与请求端点不匹配", http.StatusBadRequest)
+		return
+	}
 	upstream, err := parseBaseURL(target.BaseURL)
 	if err != nil {
 		p.logger.ErrorContext(r.Context(), "模型配置无效", "model_id", target.ModelID, "error", err)
 		p.errorHandler(w, r, err)
 		return
+	}
+	if target.UpstreamModel != "" && target.UpstreamModel != meta.Model {
+		body, err = rewriteModel(body, target.UpstreamModel)
+		if err != nil {
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
@@ -159,6 +172,32 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		startedAt:    time.Now(),
 	})
 	p.reverse.ServeHTTP(w, r.WithContext(ctx))
+}
+
+func protocolForPath(requestPath string) string {
+	switch requestPath {
+	case "/v1/chat/completions":
+		return "openai_chat_completions"
+	case "/v1/responses":
+		return "openai_responses"
+	case "/v1/messages":
+		return "anthropic"
+	default:
+		return ""
+	}
+}
+
+func rewriteModel(body []byte, upstreamModel string) ([]byte, error) {
+	var request map[string]json.RawMessage
+	if err := json.Unmarshal(body, &request); err != nil || request == nil {
+		return nil, errors.New("请求体必须是 JSON 对象")
+	}
+	encoded, err := json.Marshal(upstreamModel)
+	if err != nil {
+		return nil, err
+	}
+	request["model"] = encoded
+	return json.Marshal(request)
 }
 
 func (p *Proxy) rewrite(r *httputil.ProxyRequest) {

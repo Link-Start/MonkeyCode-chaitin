@@ -12,10 +12,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/chaitin/MonkeyCode/monkeyai/backend/internal/agentconfig"
+	"github.com/chaitin/MonkeyCode/monkeyai/backend/internal/apikey"
 	"github.com/chaitin/MonkeyCode/monkeyai/backend/internal/config"
 	"github.com/chaitin/MonkeyCode/monkeyai/backend/internal/database"
 	"github.com/chaitin/MonkeyCode/monkeyai/backend/internal/httpapi"
 	"github.com/chaitin/MonkeyCode/monkeyai/backend/internal/identity"
+	"github.com/chaitin/MonkeyCode/monkeyai/backend/internal/model"
 	"github.com/chaitin/MonkeyCode/monkeyai/backend/internal/proxy"
 	"github.com/chaitin/MonkeyCode/monkeyai/backend/internal/setting"
 )
@@ -72,40 +75,53 @@ func newHandler(logger *slog.Logger, database httpapi.Pinger) http.Handler {
 }
 
 func newApplicationHandler(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool, cfg config.Config) (http.Handler, error) {
-	broker := setting.NewBroker()
-	settings := setting.NewService(setting.NewPostgres(pool), broker)
+	settings := setting.NewService(setting.NewPostgres(pool))
 	identities := identity.NewService(pool, settings, cfg.PublicURL, cfg.AdminURL)
 	if err := identities.EnsureInitialAdmin(ctx, cfg.InitialAdminName, cfg.InitialAdminEmail, cfg.InitialAdminPassword); err != nil {
 		return nil, fmt.Errorf("初始化管理员: %w", err)
 	}
-	go func() {
-		for ctx.Err() == nil {
-			if err := settings.Listen(ctx); err != nil && ctx.Err() == nil {
-				logger.Error("监听设置变更失败", "error", err)
-			}
-			select {
-			case <-ctx.Done():
-			case <-time.After(time.Second):
-			}
-		}
-	}()
+	keys := apikey.NewService(apikey.NewPostgres(pool))
+	models := model.NewService(model.NewPostgres(pool)).WithKeyAuthenticator(keys)
+	agentConfig := agentconfig.NewService(settings, models, cfg.PublicURL)
 
 	admin := chi.NewRouter()
 	admin.Use(identities.RequireAdmin)
 	identities.RegisterAdmin(admin)
 	settings.RegisterAdmin(admin)
+	keys.RegisterAdmin(admin)
+	models.RegisterAdmin(admin)
 
 	agent := chi.NewRouter()
 	agent.Use(identities.RequireAgent)
 	identities.RegisterAgent(agent)
-	settings.RegisterAgent(agent)
+	keys.RegisterAgent(agent)
+	agentConfig.RegisterAgent(agent)
 
 	router := chi.NewRouter()
-	proxy.NewProxy(nil, logger).Register(router)
+	proxy.NewProxy(modelResolver{service: models}, logger).Register(router)
 	router.Get("/.well-known/oauth-authorization-server", identities.OAuthMetadata)
 	router.Mount("/oauth", identities.OAuthRouter())
 	router.Mount("/", httpapi.New(logger, pool, admin, agent, identities.AuthRouter()))
 	return router, nil
+}
+
+type modelResolver struct {
+	service *model.Service
+}
+
+func (r modelResolver) Resolve(ctx context.Context, credential, requestedModel string) (proxy.Target, error) {
+	target, err := r.service.Resolve(ctx, credential, requestedModel)
+	if err != nil {
+		return proxy.Target{}, err
+	}
+	return proxy.Target{
+		ModelID:       target.ID,
+		UpstreamModel: target.UpstreamModelID,
+		Protocol:      string(target.Protocol),
+		UserID:        target.UserID,
+		BaseURL:       target.BaseURL,
+		APIKey:        target.APIKey,
+	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {

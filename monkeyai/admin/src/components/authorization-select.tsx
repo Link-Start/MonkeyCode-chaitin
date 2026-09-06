@@ -36,14 +36,6 @@ function getGroupAndDescendantIds(
   ]
 }
 
-function getMemberIdsInGroupTree(group: AuthorizationGroupNode) {
-  const groupIds = new Set(getGroupAndDescendantIds(group))
-
-  return AUTHORIZATION_MEMBERS.filter((member) =>
-    groupIds.has(member.groupId)
-  ).map((member) => member.id)
-}
-
 export function AuthorizationSelect({
   id,
   open,
@@ -52,6 +44,8 @@ export function AuthorizationSelect({
   value,
   onOpenChange,
   onValueChange,
+  groups = AUTHORIZATION_GROUP_TREE,
+  members = AUTHORIZATION_MEMBERS,
 }: {
   id: string
   open: boolean
@@ -60,9 +54,16 @@ export function AuthorizationSelect({
   value: AuthorizationSelection
   onOpenChange: (open: boolean) => void
   onValueChange: (value: AuthorizationSelection) => void
+  groups?: AuthorizationGroupNode[]
+  members?: typeof AUTHORIZATION_MEMBERS
 }) {
   const { t } = useTranslation()
-  const summary = getAuthorizationNames(value, t)
+  const summary = getAuthorizationNames(
+    value,
+    t,
+    flattenGroups(groups),
+    members
+  )
 
   const setGroupChecked = (group: AuthorizationGroupNode, checked: boolean) => {
     if (!checked) {
@@ -74,7 +75,9 @@ export function AuthorizationSelect({
     }
 
     const descendantGroupIds = new Set(getGroupAndDescendantIds(group))
-    const inheritedMemberIds = new Set(getMemberIdsInGroupTree(group))
+    const inheritedMemberIds = new Set(
+      getMemberIdsInGroupTreeFromMembers(group, members)
+    )
 
     onValueChange({
       groupIds: [
@@ -104,14 +107,16 @@ export function AuthorizationSelect({
     const selected = value.groupIds.includes(group.value)
     const effectivelySelected = inherited || selected
     const subtreeGroupIds = new Set(getGroupAndDescendantIds(group))
-    const subtreeMemberIds = new Set(getMemberIdsInGroupTree(group))
+    const subtreeMemberIds = new Set(
+      getMemberIdsInGroupTreeFromMembers(group, members)
+    )
     const partiallySelected =
       !effectivelySelected &&
       (value.groupIds.some(
         (groupId) => groupId !== group.value && subtreeGroupIds.has(groupId)
       ) ||
         value.memberIds.some((memberId) => subtreeMemberIds.has(memberId)))
-    const directMembers = AUTHORIZATION_MEMBERS.filter(
+    const directMembers = members.filter(
       (member) => member.groupId === group.value
     )
     const groupCheckboxId = `${id}-group-${group.value}`
@@ -213,9 +218,62 @@ export function AuthorizationSelect({
           <PopoverTitle>{title}</PopoverTitle>
         </PopoverHeader>
         <div role="tree">
-          {AUTHORIZATION_GROUP_TREE.map((group) => renderGroup(group))}
+          {groups.map((group) => renderGroup(group))}
+          {members
+            .filter(
+              (member) =>
+                !flattenGroups(groups).some(
+                  (group) => group.value === member.groupId
+                )
+            )
+            .map((member) => {
+              const memberCheckboxId = `${id}-member-${member.id}`
+              return (
+                <label
+                  className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted"
+                  htmlFor={memberCheckboxId}
+                  key={member.id}
+                >
+                  <Checkbox
+                    checked={value.memberIds.includes(member.id)}
+                    id={memberCheckboxId}
+                    onCheckedChange={(checked) =>
+                      setMemberChecked(member.id, checked)
+                    }
+                  />
+                  <HugeiconsIcon
+                    className="size-4 shrink-0 text-muted-foreground"
+                    icon={User02Icon}
+                    strokeWidth={2}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{member.name}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {member.email}
+                  </span>
+                </label>
+              )
+            })}
         </div>
       </PopoverContent>
     </Popover>
   )
+}
+
+function flattenGroups(
+  groups: AuthorizationGroupNode[]
+): AuthorizationGroupNode[] {
+  return groups.flatMap((group) => [
+    group,
+    ...flattenGroups(group.children ?? []),
+  ])
+}
+
+function getMemberIdsInGroupTreeFromMembers(
+  group: AuthorizationGroupNode,
+  members: typeof AUTHORIZATION_MEMBERS
+) {
+  const groupIds = new Set(getGroupAndDescendantIds(group))
+  return members
+    .filter((member) => groupIds.has(member.groupId))
+    .map((member) => member.id)
 }

@@ -8,7 +8,7 @@ MonkeyAI 的统一 Go 后端，同时承接管理后台和 AI Work Agent 的请�
 | --- | --- |
 | 语言 | Go 1.27 |
 | HTTP | 标准库 `net/http` + `chi/v5` |
-| API | REST、JSON、OpenAPI 3.1；实时单向推送使用 SSE |
+| API | REST、JSON、OpenAPI 3.1；模型流式响应透传上游 SSE |
 | 数据库 | PostgreSQL、`pgx/v5`、`sqlc` |
 | 数据迁移 | `golang-migrate/v4` 与显式 SQL |
 | 配置 | 标准库 `os`、`flag`、`strconv` |
@@ -34,6 +34,8 @@ backend/
 │   ├── app/                   # 唯一集成点：启动、组装和生命周期
 │   ├── httpapi/               # 公共路由、中间件和响应协议
 │   ├── identity/              # 登录、用户、角色和分组
+│   ├── apikey/                # Agent 调用密钥
+│   ├── agentconfig/           # Agent 配置快照聚合
 │   ├── resource/              # 文件、标签、资源所有权和访问授权
 │   ├── model/                 # 模型配置与调用入口
 │   ├── proxy/                 # 模型协议代理与调用计费

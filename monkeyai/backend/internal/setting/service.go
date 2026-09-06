@@ -32,27 +32,11 @@ type Store interface {
 }
 
 type Service struct {
-	store             Store
-	broker            *Broker
-	distributedEvents bool
+	store Store
 }
 
-func NewService(store Store, broker *Broker) *Service {
-	_, distributed := store.(eventListener)
-	return &Service{store: store, broker: broker, distributedEvents: distributed}
-}
-
-type eventListener interface {
-	Listen(context.Context, func(Event)) error
-}
-
-func (s *Service) Listen(ctx context.Context) error {
-	listener, ok := s.store.(eventListener)
-	if !ok {
-		<-ctx.Done()
-		return ctx.Err()
-	}
-	return listener.Listen(ctx, s.broker.Publish)
+func NewService(store Store) *Service {
+	return &Service{store: store}
 }
 
 func (s *Service) Get(ctx context.Context, key string) (Record, error) {
@@ -101,9 +85,6 @@ func (s *Service) Put(ctx context.Context, key string, value json.RawMessage, sc
 	})
 	if err != nil {
 		return Record{}, err
-	}
-	if !s.distributedEvents {
-		s.broker.Publish(Event{Key: record.Key, Version: record.UpdatedAt.UnixMilli()})
 	}
 	return record, nil
 }

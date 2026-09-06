@@ -1,0 +1,42 @@
+openapi: 3.1.0
+info:
+  title: MonkeyAI Agent API Key API
+  version: 1.0.0
+paths:
+  /api/agent/v1/api-keys:
+    get:
+      summary: 查询当前用户的调用密钥
+      responses:
+        "200":
+          description: 调用密钥元数据列表
+    post:
+      summary: 创建调用密钥
+      responses:
+        "201":
+          description: 创建成功，原始密钥只返回一次
+  /api/agent/v1/api-keys/{keyID}:
+    parameters:
+      - in: path
+        name: keyID
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      summary: 撤销调用密钥
+      responses:
+        "204":
+          description: 撤销成功
+  /api/agent/v1/api-keys/{keyID}/rotate:
+    parameters:
+      - in: path
+        name: keyID
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: 轮换调用密钥
+      responses:
+        "201":
+          description: 轮换成功，原始密钥只返回一次

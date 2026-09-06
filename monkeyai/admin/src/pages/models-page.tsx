@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import {
   Delete02Icon,
   Edit02Icon,
@@ -64,14 +64,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Iconfont } from "@/components/iconfont"
 import {
   getAuthorizationNames,
+  type AuthorizationGroupNode,
+  type AuthorizationMember,
   type AuthorizationSelection,
 } from "@/lib/authorization-groups"
+import { api } from "@/lib/api"
 import { getModelIconName } from "@/lib/model-utils"
 import { cn } from "@/lib/utils"
 
 const PROTOCOLS = [
-  { value: "openai-chat-completions", label: "OpenAI Chat Completions" },
-  { value: "openai-responses", label: "OpenAI Responses" },
+  { value: "openai_chat_completions", label: "OpenAI Chat Completions" },
+  { value: "openai_responses", label: "OpenAI Responses" },
   { value: "anthropic", label: "Anthropic" },
 ] as const
 
@@ -83,178 +86,147 @@ type ModelBase = {
   modelId: string
   displayName: string
   contextSizeK: number
+  maxOutputTokens: number
   supportsVision: boolean
   baseUrl: string
   protocol: ModelProtocol
-  apiKey: string
+  apiKeyConfigured: boolean
   authorization: AuthorizationSelection
   enabled: boolean
 }
 
-type Model = ModelBase &
-  ({ type: "system"; multiplier: number } | { type: "user" })
+type Model = ModelBase & { type: ModelType; multiplier: number }
 
-const INITIAL_MODELS: Model[] = [
-  {
-    id: "openai-gpt-4o",
-    modelId: "gpt-4o",
-    displayName: "GPT-4o",
-    contextSizeK: 128,
-    supportsVision: true,
-    baseUrl: "https://api.openai.com/v1",
-    protocol: "openai-chat-completions",
-    apiKey: "configured",
-    multiplier: 1,
+type ApiModel = {
+  id: string
+  ownership_type: ModelType
+  model_id: string
+  display_name: string
+  protocol: ModelProtocol
+  base_url: string
+  api_key_configured: boolean
+  advanced_config: {
+    context_window_tokens: number
+    max_output_tokens: number
+    supports_vision: boolean
+  }
+  credit_multiplier: number
+  authorization: {
+    user_ids: string[]
+    group_ids: string[]
+  }
+  enabled: boolean
+}
+
+type AuthorizationSubject = {
+  id: string
+  parent_id?: string
+  name: string
+  email?: string
+}
+
+function fromApiModel(model: ApiModel): Model {
+  return {
+    id: model.id,
+    modelId: model.model_id,
+    displayName: model.display_name,
+    contextSizeK: model.advanced_config.context_window_tokens / 1000,
+    maxOutputTokens: model.advanced_config.max_output_tokens,
+    supportsVision: model.advanced_config.supports_vision,
+    baseUrl: model.base_url,
+    protocol: model.protocol,
+    apiKeyConfigured: model.api_key_configured,
+    multiplier: model.credit_multiplier,
     authorization: {
-      groupIds: ["administrators", "product", "engineering"],
-      memberIds: [],
+      groupIds: model.authorization.group_ids,
+      memberIds: model.authorization.user_ids,
     },
-    enabled: true,
-    type: "system",
-  },
-  {
-    id: "openai-o3",
-    modelId: "o3",
-    displayName: "OpenAI o3",
-    contextSizeK: 200,
-    supportsVision: true,
-    baseUrl: "https://api.openai.com/v1",
-    protocol: "openai-responses",
-    apiKey: "configured",
-    multiplier: 2,
-    authorization: {
-      groupIds: ["administrators", "engineering"],
-      memberIds: [],
-    },
-    enabled: true,
-    type: "system",
-  },
-  {
-    id: "anthropic-claude-sonnet",
-    modelId: "claude-3-5-sonnet-latest",
-    displayName: "Claude 3.5 Sonnet",
-    contextSizeK: 200,
-    supportsVision: true,
-    baseUrl: "https://api.anthropic.com/v1",
-    protocol: "anthropic",
-    apiKey: "configured",
-    multiplier: 1.5,
-    authorization: {
-      groupIds: ["administrators", "product", "engineering"],
-      memberIds: [],
-    },
-    enabled: true,
-    type: "system",
-  },
-  {
-    id: "deepseek-chat",
-    modelId: "deepseek-chat",
-    displayName: "DeepSeek V3",
-    contextSizeK: 64,
-    supportsVision: false,
-    baseUrl: "https://api.deepseek.com",
-    protocol: "openai-chat-completions",
-    apiKey: "configured",
-    multiplier: 0.5,
-    authorization: {
-      groupIds: ["administrators", "engineering", "operations"],
-      memberIds: [],
-    },
-    enabled: true,
-    type: "system",
-  },
-  {
-    id: "alibaba-qwen-max",
-    modelId: "qwen-max",
-    displayName: "Qwen Max",
-    contextSizeK: 32,
-    supportsVision: false,
-    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    protocol: "openai-chat-completions",
-    apiKey: "configured",
-    multiplier: 0.8,
-    authorization: {
-      groupIds: ["administrators", "product"],
-      memberIds: [],
-    },
-    enabled: true,
-    type: "system",
-  },
-  {
-    id: "volcengine-doubao-pro",
-    modelId: "doubao-pro-32k",
-    displayName: "Doubao Pro",
-    contextSizeK: 32,
-    supportsVision: false,
-    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
-    protocol: "openai-chat-completions",
-    apiKey: "configured",
-    multiplier: 0.6,
-    authorization: {
-      groupIds: ["administrators", "operations"],
-      memberIds: [],
-    },
-    enabled: true,
-    type: "system",
-  },
-  {
-    id: "user-gemini-2-5-pro",
-    modelId: "gemini-2.5-pro",
-    displayName: "Gemini 2.5 Pro",
-    contextSizeK: 1024,
-    supportsVision: true,
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    protocol: "openai-chat-completions",
-    apiKey: "configured",
-    authorization: {
-      groupIds: [],
-      memberIds: ["member-04"],
-    },
-    enabled: true,
-    type: "user",
-  },
-  {
-    id: "user-moonshot-v1",
-    modelId: "moonshot-v1-32k",
-    displayName: "Moonshot 32K",
-    contextSizeK: 32,
-    supportsVision: false,
-    baseUrl: "https://api.moonshot.cn/v1",
-    protocol: "openai-chat-completions",
-    apiKey: "configured",
-    authorization: {
-      groupIds: [],
-      memberIds: ["member-01"],
-    },
-    enabled: true,
-    type: "user",
-  },
-]
+    enabled: model.enabled,
+    type: model.ownership_type,
+  }
+}
+
+function buildGroupTree(groups: AuthorizationSubject[]) {
+  const nodes = new Map<string, AuthorizationGroupNode>()
+  groups.forEach((group) =>
+    nodes.set(group.id, { value: group.id, labelKey: group.name, children: [] })
+  )
+  const roots: AuthorizationGroupNode[] = []
+  groups.forEach((group) => {
+    const node = nodes.get(group.id)!
+    const parent = group.parent_id ? nodes.get(group.parent_id) : undefined
+    if (parent) parent.children!.push(node)
+    else roots.push(node)
+  })
+  return roots
+}
+
+function flattenGroupTree(
+  groups: AuthorizationGroupNode[]
+): AuthorizationGroupNode[] {
+  return groups.flatMap((group) => [
+    group,
+    ...flattenGroupTree(group.children ?? []),
+  ])
+}
 
 export function ModelsPage() {
   const { t } = useTranslation()
-  const [models, setModels] = useState(INITIAL_MODELS)
+  const [models, setModels] = useState<Model[]>([])
+  const [groups, setGroups] = useState<AuthorizationGroupNode[]>([])
+  const [members, setMembers] = useState<AuthorizationMember[]>([])
+  const [error, setError] = useState("")
+  const [saving, setSaving] = useState(false)
   const [activeModelType, setActiveModelType] = useState<ModelType>("system")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingModelId, setEditingModelId] = useState<string | null>(null)
   const [modelPendingDeletion, setModelPendingDeletion] =
     useState<Model | null>(null)
   const [protocol, setProtocol] = useState<ModelProtocol>(
-    "openai-chat-completions"
+    "openai_chat_completions"
   )
   const [supportsVision, setSupportsVision] = useState(false)
   const [authorizationOpen, setAuthorizationOpen] = useState(false)
   const [authorization, setAuthorization] = useState<AuthorizationSelection>({
-    groupIds: ["administrators"],
+    groupIds: [],
     memberIds: [],
   })
   const editingModel = models.find((model) => model.id === editingModelId)
 
+  useEffect(() => {
+    let active = true
+    Promise.all([
+      api<{ models: ApiModel[] }>("/api/admin/v1/models"),
+      api<{ groups: AuthorizationSubject[]; users: AuthorizationSubject[] }>(
+        "/api/admin/v1/models/authorization-subjects"
+      ),
+    ])
+      .then(([modelResult, subjects]) => {
+        if (!active) return
+        setModels(modelResult.models.map(fromApiModel))
+        setGroups(buildGroupTree(subjects.groups))
+        setMembers(
+          subjects.users.map((user) => ({
+            id: user.id,
+            name: user.name,
+            email: user.email ?? "",
+            groupId: "",
+          }))
+        )
+      })
+      .catch((reason: Error) => {
+        if (active) setError(reason.message)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
   const resetModelOptions = () => {
-    setProtocol("openai-chat-completions")
+    setProtocol("openai_chat_completions")
     setSupportsVision(false)
     setAuthorizationOpen(false)
-    setAuthorization({ groupIds: ["administrators"], memberIds: [] })
+    setAuthorization({ groupIds: [], memberIds: [] })
   }
 
   const handleDialogOpenChange = (open: boolean) => {
@@ -277,28 +249,43 @@ export function ModelsPage() {
     setDialogOpen(true)
   }
 
-  const setModelEnabled = (modelId: string, enabled: boolean) => {
-    setModels((currentModels) =>
-      currentModels.map((model) =>
-        model.id === modelId && model.type === "system"
-          ? { ...model, enabled }
-          : model
+  const setModelEnabled = async (modelId: string, enabled: boolean) => {
+    setError("")
+    try {
+      const updated = await api<ApiModel>(
+        `/api/admin/v1/models/${modelId}/enabled`,
+        { method: "PATCH", body: JSON.stringify({ enabled }) }
       )
-    )
+      setModels((currentModels) =>
+        currentModels.map((model) =>
+          model.id === modelId ? fromApiModel(updated) : model
+        )
+      )
+    } catch (reason) {
+      setError((reason as Error).message)
+    }
   }
 
-  const handleDeleteModel = () => {
+  const handleDeleteModel = async () => {
     if (!modelPendingDeletion || modelPendingDeletion.type !== "system") {
       return
     }
 
-    setModels((currentModels) =>
-      currentModels.filter((model) => model.id !== modelPendingDeletion.id)
-    )
-    setModelPendingDeletion(null)
+    setError("")
+    try {
+      await api<void>(`/api/admin/v1/models/${modelPendingDeletion.id}`, {
+        method: "DELETE",
+      })
+      setModels((currentModels) =>
+        currentModels.filter((model) => model.id !== modelPendingDeletion.id)
+      )
+      setModelPendingDeletion(null)
+    } catch (reason) {
+      setError((reason as Error).message)
+    }
   }
 
-  const handleAddModel = (event: FormEvent<HTMLFormElement>) => {
+  const handleAddModel = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     const form = event.currentTarget
@@ -306,6 +293,7 @@ export function ModelsPage() {
     const modelId = String(formData.get("modelId") ?? "").trim()
     const displayName = String(formData.get("displayName") ?? "").trim()
     const contextSizeK = Number(formData.get("contextSizeK"))
+    const maxOutputTokens = Number(formData.get("maxOutputTokens"))
     const baseUrl = String(formData.get("baseUrl") ?? "").trim()
     const apiKey = String(formData.get("apiKey") ?? "").trim()
     const multiplier = Number(formData.get("multiplier"))
@@ -315,60 +303,66 @@ export function ModelsPage() {
       !displayName ||
       !Number.isFinite(contextSizeK) ||
       contextSizeK <= 0 ||
+      !Number.isFinite(maxOutputTokens) ||
+      maxOutputTokens <= 0 ||
       !baseUrl ||
-      !apiKey ||
+      (!apiKey && !editingModel?.apiKeyConfigured) ||
       !Number.isFinite(multiplier) ||
-      multiplier < 0 ||
+      multiplier <= 0 ||
       authorization.groupIds.length + authorization.memberIds.length === 0 ||
       editingModel?.type === "user"
     ) {
       return
     }
 
-    if (editingModel) {
-      setModels((currentModels) =>
-        currentModels.map((model) =>
-          model.id === editingModel.id
-            ? {
-                ...model,
-                modelId,
-                displayName,
-                contextSizeK,
-                supportsVision,
-                baseUrl,
-                protocol,
-                apiKey,
-                multiplier,
-                authorization,
-              }
-            : model
-        )
-      )
-    } else {
-      setModels((currentModels) => [
-        ...currentModels,
-        {
-          id: `${modelId}-${Date.now()}`,
-          modelId,
-          displayName,
-          contextSizeK,
-          supportsVision,
-          baseUrl,
-          protocol,
-          apiKey,
-          multiplier,
-          authorization,
-          enabled: true,
-          type: "system",
+    setSaving(true)
+    setError("")
+    try {
+      const payload = {
+        model_id: modelId,
+        display_name: displayName,
+        protocol,
+        base_url: baseUrl,
+        api_key: apiKey,
+        advanced_config: {
+          context_window_tokens: contextSizeK * 1000,
+          max_output_tokens: maxOutputTokens,
+          supports_vision: supportsVision,
         },
-      ])
+        credit_multiplier: multiplier,
+        authorization: {
+          group_ids: authorization.groupIds,
+          user_ids: authorization.memberIds,
+        },
+      }
+      const saved = await api<ApiModel>(
+        editingModel
+          ? `/api/admin/v1/models/${editingModel.id}`
+          : "/api/admin/v1/models",
+        {
+          method: editingModel ? "PUT" : "POST",
+          body: JSON.stringify(payload),
+        }
+      )
+      setModels((currentModels) =>
+        editingModel
+          ? currentModels.map((model) =>
+              model.id === saved.id ? fromApiModel(saved) : model
+            )
+          : [fromApiModel(saved), ...currentModels]
+      )
+      form.reset()
+      handleDialogOpenChange(false)
+    } catch (reason) {
+      setError((reason as Error).message)
+    } finally {
+      setSaving(false)
     }
-    form.reset()
-    handleDialogOpenChange(false)
   }
 
   return (
     <section className="flex flex-1 flex-col gap-4 p-4 pt-0">
+      {error && <p className="text-sm text-destructive">{error}</p>}
       <Tabs
         className="gap-4"
         value={activeModelType}
@@ -466,10 +460,10 @@ export function ModelsPage() {
                         autoComplete="new-password"
                         id="model-api-key"
                         name="apiKey"
-                        defaultValue={editingModel?.apiKey}
+                        defaultValue=""
                         placeholder={t("pages.models.apiKeyPlaceholder")}
                         type="password"
-                        required
+                        required={!editingModel?.apiKeyConfigured}
                       />
                     </Field>
 
@@ -490,12 +484,27 @@ export function ModelsPage() {
                         />
                       </Field>
                       <Field>
+                        <FieldLabel htmlFor="model-max-output-tokens">
+                          {t("pages.modelStatistics.metrics.outputTokens")}
+                        </FieldLabel>
+                        <Input
+                          id="model-max-output-tokens"
+                          min="1"
+                          name="maxOutputTokens"
+                          defaultValue={editingModel?.maxOutputTokens}
+                          placeholder="8192"
+                          step="1"
+                          type="number"
+                          required
+                        />
+                      </Field>
+                      <Field>
                         <FieldLabel htmlFor="model-multiplier">
                           {t("pages.models.multiplier")}
                         </FieldLabel>
                         <Input
                           id="model-multiplier"
-                          min="0"
+                          min="0.01"
                           name="multiplier"
                           defaultValue={
                             editingModel?.type === "system"
@@ -558,6 +567,8 @@ export function ModelsPage() {
                         value={authorization}
                         onOpenChange={setAuthorizationOpen}
                         onValueChange={setAuthorization}
+                        groups={groups}
+                        members={members}
                       />
                     </Field>
                   </FieldGroup>
@@ -567,7 +578,7 @@ export function ModelsPage() {
                     >
                       {t("pages.models.cancel")}
                     </DialogClose>
-                    <Button type="submit">
+                    <Button disabled={saving} type="submit">
                       {editingModel
                         ? t("pages.models.save")
                         : t("pages.models.create")}
@@ -741,9 +752,19 @@ export function ModelsPage() {
                       </span>
                       <span
                         className="w-3/5 truncate text-end font-medium"
-                        title={getAuthorizationNames(model.authorization, t)}
+                        title={getAuthorizationNames(
+                          model.authorization,
+                          t,
+                          flattenGroupTree(groups),
+                          members
+                        )}
                       >
-                        {getAuthorizationNames(model.authorization, t)}
+                        {getAuthorizationNames(
+                          model.authorization,
+                          t,
+                          flattenGroupTree(groups),
+                          members
+                        )}
                       </span>
                     </CardFooter>
                   </Card>

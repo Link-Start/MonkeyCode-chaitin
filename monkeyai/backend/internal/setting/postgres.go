@@ -2,7 +2,6 @@ package setting
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -53,13 +52,7 @@ func (p *Postgres) List(ctx context.Context) ([]Record, error) {
 }
 
 func (p *Postgres) Put(ctx context.Context, record Record) (Record, error) {
-	tx, err := p.pool.Begin(ctx)
-	if err != nil {
-		return Record{}, fmt.Errorf("开始保存设置: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	stored, err := scanRecord(tx.QueryRow(ctx, `
+	stored, err := scanRecord(p.pool.QueryRow(ctx, `
 		INSERT INTO settings (key, value, schema_version, updated_by_user_id)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (key) DO UPDATE SET
@@ -72,38 +65,7 @@ func (p *Postgres) Put(ctx context.Context, record Record) (Record, error) {
 	if err != nil {
 		return Record{}, fmt.Errorf("保存设置: %w", err)
 	}
-	payload, err := json.Marshal(Event{Key: stored.Key, Version: stored.UpdatedAt.UnixMilli()})
-	if err != nil {
-		return Record{}, err
-	}
-	if _, err := tx.Exec(ctx, `SELECT pg_notify('monkeyai_settings', $1)`, string(payload)); err != nil {
-		return Record{}, fmt.Errorf("发布设置变更: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Record{}, fmt.Errorf("提交设置: %w", err)
-	}
 	return stored, nil
-}
-
-func (p *Postgres) Listen(ctx context.Context, publish func(Event)) error {
-	connection, err := p.pool.Acquire(ctx)
-	if err != nil {
-		return fmt.Errorf("获取设置监听连接: %w", err)
-	}
-	defer connection.Release()
-	if _, err := connection.Exec(ctx, `LISTEN monkeyai_settings`); err != nil {
-		return fmt.Errorf("监听设置变更: %w", err)
-	}
-	for {
-		notification, err := connection.Conn().WaitForNotification(ctx)
-		if err != nil {
-			return err
-		}
-		var event Event
-		if json.Unmarshal([]byte(notification.Payload), &event) == nil && event.Key != "" {
-			publish(event)
-		}
-	}
 }
 
 type scanner interface {

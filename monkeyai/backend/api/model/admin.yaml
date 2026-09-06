@@ -1,0 +1,59 @@
+openapi: 3.1.0
+info:
+  title: MonkeyAI Model Admin API
+  version: 1.0.0
+paths:
+  /api/admin/v1/models:
+    get:
+      summary: 查询模型
+      parameters:
+        - in: query
+          name: ownership_type
+          schema:
+            type: string
+            enum: [system, user]
+      responses:
+        "200":
+          description: 模型列表
+    post:
+      summary: 创建系统模型
+      responses:
+        "201":
+          description: 创建成功
+  /api/admin/v1/models/authorization-subjects:
+    get:
+      summary: 查询可授权的用户和分组
+      responses:
+        "200":
+          description: 授权对象
+  /api/admin/v1/models/{modelID}:
+    parameters:
+      - in: path
+        name: modelID
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      summary: 更新系统模型
+      responses:
+        "200":
+          description: 更新成功
+    delete:
+      summary: 删除系统模型
+      responses:
+        "204":
+          description: 删除成功
+  /api/admin/v1/models/{modelID}/enabled:
+    parameters:
+      - in: path
+        name: modelID
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      summary: 启用或停用系统模型
+      responses:
+        "200":
+          description: 更新成功
