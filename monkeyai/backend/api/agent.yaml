@@ -2,6 +2,8 @@ openapi: 3.1.0
 info:
   title: MonkeyAI Agent API
   version: 1.0.0
+security:
+  - OAuthAccessToken: []
 paths:
   /api/v1/config:
     get:
@@ -9,47 +11,480 @@ paths:
       parameters:
         - in: header
           name: If-None-Match
+          description: 上一次响应的 ETag；配置未变化时服务返回 304。
           schema:
             type: string
       responses:
         "200":
-          description: 配置快照
+          description: 当前用户的完整 Agent 配置快照。
+          headers:
+            ETag:
+              description: 基于配置内容生成的稳定版本标识。
+              schema:
+                type: string
+                examples: ['"sha256:0123456789abcdef"']
+            Cache-Control:
+              description: 配置快照的缓存策略。
+              schema:
+                type: string
+                examples: ["private, no-cache"]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentConfigSnapshot"
         "304":
-          description: 配置未变化
+          description: 配置未变化，无响应体。
+          headers:
+            ETag:
+              description: 当前配置版本标识。
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/v1/api-keys:
     get:
       summary: 查询当前用户的调用密钥
       responses:
         "200":
-          description: 调用密钥元数据列表
+          description: 当前用户的调用密钥元数据列表，不包含密钥原文。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeysResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
     post:
       summary: 创建调用密钥
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPIKeyInput"
       responses:
         "201":
-          description: 创建成功，原始密钥只返回一次
+          description: 创建成功；api_key 原文只在本次响应中返回。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedAPIKey"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /api/v1/api-keys/{keyID}:
     parameters:
-      - in: path
-        name: keyID
-        required: true
-        schema:
-          type: string
-          format: uuid
+      - $ref: "#/components/parameters/KeyID"
     delete:
       summary: 撤销调用密钥
       responses:
         "204":
-          description: 撤销成功
+          description: 撤销成功，无响应体。
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/v1/api-keys/{keyID}/rotate:
     parameters:
-      - in: path
-        name: keyID
-        required: true
-        schema:
-          type: string
-          format: uuid
+      - $ref: "#/components/parameters/KeyID"
     post:
       summary: 轮换调用密钥
+      description: 创建同名、同权限的新密钥并撤销原密钥。
       responses:
         "201":
-          description: 轮换成功，原始密钥只返回一次
+          description: 轮换成功；api_key 原文只在本次响应中返回。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedAPIKey"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    OAuthAccessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: OAuth 2.0 access token
+      description: Agent 登录授权流程签发的短期 access token。
+  parameters:
+    KeyID:
+      in: path
+      name: keyID
+      required: true
+      description: 调用密钥 UUID。
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: 请求参数或请求体无效。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: 缺少 access token，或 token 无效、已过期。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: 指定资源不存在或不属于当前用户。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: 服务内部错误。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: 供调用方识别错误类别的稳定代码。
+          examples: [api_key_error]
+        message:
+          type: string
+          description: 面向用户或开发者的错误说明。
+    AgentConfigSnapshot:
+      type: object
+      required: [version, updated_at, settings, model_gateway, models]
+      properties:
+        version:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+          description: 对配置快照内容计算得到的稳定 SHA-256 版本。
+        updated_at:
+          type: string
+          format: date-time
+          description: 设置或可用模型最近一次发生变化的时间。
+        settings:
+          $ref: "#/components/schemas/AgentSettings"
+        model_gateway:
+          $ref: "#/components/schemas/ModelGateway"
+        models:
+          type: array
+          description: 当前用户有权调用且处于启用状态的模型。
+          items:
+            $ref: "#/components/schemas/AgentModel"
+    AgentSettings:
+      type: object
+      description: 按设置域组织的全局设置快照；只返回已配置的设置域，服务端密钥字段已移除。
+      properties:
+        branding:
+          $ref: "#/components/schemas/BrandingSettings"
+        authentication:
+          $ref: "#/components/schemas/AuthenticationSettings"
+        email:
+          $ref: "#/components/schemas/EmailSettings"
+        billing:
+          $ref: "#/components/schemas/BillingSettings"
+      additionalProperties:
+        type: object
+        description: 后续新增设置域的配置对象。
+    BrandingSettings:
+      type: object
+      required: [workspace_name, product_name]
+      properties:
+        workspace_name:
+          type: string
+          description: 工作区名称。
+        product_name:
+          type: string
+          description: Agent 向用户展示的产品名称。
+      additionalProperties: true
+    AuthenticationSettings:
+      type: object
+      properties:
+        registration_enabled:
+          type: boolean
+          description: 是否允许新用户注册。
+        password_enabled:
+          type: boolean
+          description: 是否允许密码登录。
+        email_code_enabled:
+          type: boolean
+          description: 是否允许邮箱验证码登录。
+        oauth_connections:
+          type: array
+          description: 已配置的 OAuth 登录连接；不包含 client_secret。
+          items:
+            $ref: "#/components/schemas/OAuthConnection"
+      additionalProperties: true
+    OAuthConnection:
+      type: object
+      required: [id, provider, name, client_id, enabled]
+      properties:
+        id:
+          type: string
+          description: OAuth 连接的稳定标识。
+        provider:
+          type: string
+          enum: [github, google, microsoft, gitlab, oidc]
+          description: OAuth 或 OIDC 提供方。
+        name:
+          type: string
+          description: 登录界面展示的连接名称。
+        client_id:
+          type: string
+          description: OAuth Client ID。
+        issuer_url:
+          type: string
+          format: uri
+          description: OIDC Issuer URL；非 OIDC 连接可不返回。
+        authorization_url:
+          type: string
+          format: uri
+          description: 自定义授权端点；使用提供方默认端点时可不返回。
+        token_url:
+          type: string
+          format: uri
+          description: 自定义 Token 端点；使用提供方默认端点时可不返回。
+        userinfo_url:
+          type: string
+          format: uri
+          description: 自定义用户信息端点；使用提供方默认端点时可不返回。
+        scopes:
+          type: array
+          description: 请求上游授权时使用的 Scope；使用默认 Scope 时可不返回。
+          items:
+            type: string
+        enabled:
+          type: boolean
+          description: 此登录连接是否启用。
+      additionalProperties: true
+    EmailSettings:
+      type: object
+      properties:
+        sender_name:
+          type: string
+          description: 邮件发件人名称。
+        sender_email:
+          type: string
+          format: email
+          description: 邮件发件人地址。
+        smtp_host:
+          type: string
+          description: SMTP 服务器主机名。
+        smtp_port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: SMTP 服务器端口。
+        smtp_username:
+          type: string
+          description: SMTP 登录用户名。
+        smtp_encryption:
+          type: string
+          enum: [none, starttls, tls]
+          description: SMTP 连接加密方式。
+      additionalProperties: true
+    BillingSettings:
+      type: object
+      properties:
+        input_credits_per_million_tokens:
+          type: number
+          minimum: 0
+          description: 每百万输入 Token 消耗的积分。
+        cached_input_credits_per_million_tokens:
+          type: number
+          minimum: 0
+          description: 每百万缓存输入 Token 消耗的积分。
+        output_credits_per_million_tokens:
+          type: number
+          minimum: 0
+          description: 每百万输出 Token 消耗的积分。
+        quota_refresh_cycle:
+          type: string
+          enum: [daily, weekly, monthly]
+          description: 积分额度刷新周期。
+        charging_mode:
+          type: string
+          enum: [local, remote]
+          description: 使用本地积分账户或远程计费服务。
+        remote_billing_base_url:
+          type: [string, "null"]
+          format: uri
+          description: 远程计费服务地址；本地计费时可为空。
+        root_credits:
+          type: number
+          minimum: 0
+          description: 默认根额度积分数。
+        quota_overrides:
+          type: object
+          description: 按用户或分组标识覆盖的积分额度。
+          additionalProperties:
+            type: string
+      additionalProperties: true
+    ModelGateway:
+      type: object
+      required: [base_url, authentication]
+      properties:
+        base_url:
+          type: string
+          format: uri
+          description: 兼容模型 SDK 的代理 Base URL。
+        authentication:
+          type: string
+          enum: [api_key]
+          description: 模型代理使用用户创建的调用密钥鉴权。
+    AgentModel:
+      type: object
+      required:
+        - id
+        - model
+        - display_name
+        - protocol
+        - context_window_tokens
+        - max_output_tokens
+        - supports_vision
+        - credit_multiplier
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: MonkeyAI 内部模型 ID。
+        model:
+          type: string
+          format: uuid
+          description: 调用模型代理时传入的 model 值，当前与 id 相同。
+        display_name:
+          type: string
+          description: Agent 向用户展示的模型名称。
+        protocol:
+          type: string
+          enum: [openai_chat_completions, openai_responses, anthropic]
+          description: MonkeyAI 与上游服务通信时使用的协议。
+        context_window_tokens:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 模型上下文窗口的最大 Token 数。
+        max_output_tokens:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 单次请求允许生成的最大 Token 数。
+        supports_vision:
+          type: boolean
+          description: 模型是否支持图像输入。
+        credit_multiplier:
+          type: number
+          exclusiveMinimum: 0
+          description: 本模型消耗积分时使用的倍率。
+    APIKeysResponse:
+      type: object
+      required: [api_keys]
+      properties:
+        api_keys:
+          type: array
+          description: 当前用户的调用密钥元数据，不包含可用于鉴权的密钥原文。
+          items:
+            $ref: "#/components/schemas/APIKey"
+    CreateAPIKeyInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: 便于用户识别密钥用途的名称。
+        scopes:
+          type: array
+          description: 调用权限；不传或传空数组时默认为 model:invoke。
+          default: ["model:invoke"]
+          uniqueItems: true
+          items:
+            type: string
+            enum: ["model:invoke", "mcp:invoke"]
+        expires_in_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+          default: 90
+          description: 密钥自创建时起的有效天数。
+    APIKey:
+      type: object
+      required:
+        - id
+        - user_id
+        - name
+        - key_prefix
+        - scopes
+        - expires_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 调用密钥 ID。
+        user_id:
+          type: string
+          format: uuid
+          description: 密钥所属用户 ID。
+        user_name:
+          type: string
+          description: 密钥所属用户的显示名称。
+        name:
+          type: string
+          description: 用户设置的密钥名称。
+        key_prefix:
+          type: string
+          description: 用于识别密钥的安全前缀，不可用于鉴权。
+          examples: [mk_abcd1234]
+        scopes:
+          type: array
+          description: 密钥具备的调用权限。
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: ["model:invoke", "mcp:invoke"]
+        expires_at:
+          type: string
+          format: date-time
+          description: 密钥过期时间。
+        last_used_at:
+          type: string
+          format: date-time
+          description: 最近一次成功使用时间；从未使用时不返回。
+        created_at:
+          type: string
+          format: date-time
+          description: 密钥创建时间。
+        revoked_at:
+          type: string
+          format: date-time
+          description: 密钥撤销时间；尚未撤销时不返回。
+    CreatedAPIKey:
+      allOf:
+        - $ref: "#/components/schemas/APIKey"
+        - type: object
+          required: [api_key]
+          properties:
+            api_key:
+              type: string
+              pattern: "^mk_"
+              description: 可用于模型或 MCP 请求鉴权的密钥原文，只返回一次。

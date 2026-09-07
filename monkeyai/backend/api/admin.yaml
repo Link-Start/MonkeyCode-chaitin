@@ -2,6 +2,8 @@ openapi: 3.1.0
 info:
   title: MonkeyAI Admin API
   version: 1.0.0
+security:
+  - AdminSession: []
 paths:
   /api/admin/v1/models:
     get:
@@ -9,70 +11,510 @@ paths:
       parameters:
         - in: query
           name: ownership_type
+          description: 按模型所有权类型筛选；不传时返回全部模型。
           schema:
             type: string
             enum: [system, user]
       responses:
         "200":
           description: 模型列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     post:
       summary: 创建系统模型
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateModelInput"
       responses:
         "201":
           description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/admin/v1/models/authorization-subjects:
     get:
       summary: 查询可授权的用户和分组
       responses:
         "200":
           description: 授权对象
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationSubjects"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/admin/v1/models/{modelID}:
     parameters:
-      - in: path
-        name: modelID
-        required: true
-        schema:
-          type: string
-          format: uuid
+      - $ref: "#/components/parameters/ModelID"
     put:
       summary: 更新系统模型
+      description: api_key 为空时保留原有上游密钥。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelInput"
       responses:
         "200":
           description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
     delete:
       summary: 删除系统模型
       responses:
         "204":
-          description: 删除成功
+          description: 删除成功，无响应体。
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/admin/v1/models/{modelID}/enabled:
     parameters:
-      - in: path
-        name: modelID
-        required: true
-        schema:
-          type: string
-          format: uuid
+      - $ref: "#/components/parameters/ModelID"
     patch:
       summary: 启用或停用系统模型
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetModelEnabledInput"
       responses:
         "200":
           description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/admin/v1/api-keys:
     get:
       summary: 查询调用密钥
+      parameters:
+        - in: query
+          name: user_id
+          description: 按密钥所属用户筛选；不传时返回全部调用密钥。
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
-          description: 调用密钥元数据列表
+          description: 调用密钥元数据列表，不包含密钥原文。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeysResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/admin/v1/api-keys/{keyID}:
     parameters:
-      - in: path
-        name: keyID
-        required: true
-        schema:
-          type: string
-          format: uuid
+      - $ref: "#/components/parameters/KeyID"
     delete:
       summary: 管理员撤销调用密钥
       responses:
         "204":
-          description: 撤销成功
+          description: 撤销成功，无响应体。
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    AdminSession:
+      type: apiKey
+      in: cookie
+      name: monkeyai_session
+      description: 管理后台登录后设置的 HttpOnly Session Cookie。
+  parameters:
+    ModelID:
+      in: path
+      name: modelID
+      required: true
+      description: 模型 UUID。
+      schema:
+        type: string
+        format: uuid
+    KeyID:
+      in: path
+      name: keyID
+      required: true
+      description: 调用密钥 UUID。
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: 请求参数或请求体无效。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: 未登录或 Session 已失效。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: 当前用户没有管理员权限。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: 指定资源不存在。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: 服务内部错误。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: 供调用方识别错误类别的稳定代码。
+          examples: [model_error]
+        message:
+          type: string
+          description: 面向用户或开发者的错误说明。
+    ModelsResponse:
+      type: object
+      required: [models]
+      properties:
+        models:
+          type: array
+          description: 按创建时间倒序排列的模型。
+          items:
+            $ref: "#/components/schemas/Model"
+    Model:
+      type: object
+      required:
+        - id
+        - ownership_type
+        - owner_user_id
+        - model_id
+        - display_name
+        - protocol
+        - base_url
+        - api_key_configured
+        - advanced_config
+        - credit_multiplier
+        - authorization
+        - enabled
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: MonkeyAI 内部模型 ID，也是 Agent 调用时使用的 model 值。
+        ownership_type:
+          type: string
+          enum: [system, user]
+          description: system 表示管理员配置的系统模型，user 表示用户自带模型。
+        owner_user_id:
+          type: string
+          format: uuid
+          description: 模型所有者的用户 ID。
+        model_id:
+          type: string
+          description: 上游服务使用的模型标识。
+        display_name:
+          type: string
+          description: 管理后台和 Agent 展示的模型名称。
+        protocol:
+          $ref: "#/components/schemas/ModelProtocol"
+        base_url:
+          type: string
+          format: uri
+          description: 上游模型服务的 HTTP(S) 基础地址。
+        api_key_configured:
+          type: boolean
+          description: 是否已配置上游 API Key；响应不会返回密钥原文。
+        advanced_config:
+          $ref: "#/components/schemas/AdvancedConfig"
+        credit_multiplier:
+          type: number
+          exclusiveMinimum: 0
+          description: 本模型消耗积分时使用的倍率。
+        authorization:
+          $ref: "#/components/schemas/Authorization"
+        enabled:
+          type: boolean
+          description: 模型是否允许被调用。
+        created_at:
+          type: string
+          format: date-time
+          description: 模型创建时间。
+        updated_at:
+          type: string
+          format: date-time
+          description: 模型最后更新时间。
+    ModelProtocol:
+      type: string
+      enum: [openai_chat_completions, openai_responses, anthropic]
+      description: MonkeyAI 与上游服务通信时使用的协议。
+    AdvancedConfig:
+      type: object
+      required: [context_window_tokens, max_output_tokens, supports_vision]
+      properties:
+        context_window_tokens:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 模型上下文窗口的最大 Token 数。
+        max_output_tokens:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 单次请求允许生成的最大 Token 数。
+        supports_vision:
+          type: boolean
+          description: 模型是否支持图像输入。
+    Authorization:
+      type: object
+      description: 可使用该模型的用户和分组；两个数组合计至少包含一项。
+      required: [user_ids, group_ids]
+      properties:
+        user_ids:
+          type: array
+          description: 获得模型访问权的用户 UUID。
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        group_ids:
+          type: array
+          description: 获得模型访问权的分组 UUID。
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+    ModelInput:
+      type: object
+      required:
+        - model_id
+        - display_name
+        - protocol
+        - base_url
+        - advanced_config
+        - credit_multiplier
+        - authorization
+      properties:
+        model_id:
+          type: string
+          minLength: 1
+          description: 上游服务使用的模型标识。
+        display_name:
+          type: string
+          minLength: 1
+          description: 模型展示名称。
+        protocol:
+          $ref: "#/components/schemas/ModelProtocol"
+        base_url:
+          type: string
+          format: uri
+          pattern: "^https?://"
+          description: 上游模型服务的 HTTP(S) 基础地址。
+        api_key:
+          type: string
+          description: 上游 API Key；更新时传空字符串可保留原密钥。
+        advanced_config:
+          $ref: "#/components/schemas/AdvancedConfig"
+        credit_multiplier:
+          type: number
+          exclusiveMinimum: 0
+          description: 积分消耗倍率。
+        authorization:
+          $ref: "#/components/schemas/Authorization"
+    CreateModelInput:
+      allOf:
+        - $ref: "#/components/schemas/ModelInput"
+        - type: object
+          required: [api_key]
+          properties:
+            api_key:
+              type: string
+              minLength: 1
+              description: 上游 API Key，创建时不能为空。
+    SetModelEnabledInput:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          description: true 为启用模型，false 为停用模型。
+    AuthorizationSubjects:
+      type: object
+      required: [groups, users]
+      properties:
+        groups:
+          type: array
+          description: 可授权的分组。
+          items:
+            $ref: "#/components/schemas/GroupSubject"
+        users:
+          type: array
+          description: 可授权的活跃用户。
+          items:
+            $ref: "#/components/schemas/UserSubject"
+    GroupSubject:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 分组 ID。
+        parent_id:
+          type: string
+          format: uuid
+          description: 父分组 ID；根分组不返回该字段。
+        name:
+          type: string
+          description: 分组名称。
+    UserSubject:
+      type: object
+      required: [id, name, email]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 用户 ID。
+        name:
+          type: string
+          description: 用户显示名称。
+        email:
+          type: string
+          format: email
+          description: 用户邮箱。
+    APIKeysResponse:
+      type: object
+      required: [api_keys]
+      properties:
+        api_keys:
+          type: array
+          description: 调用密钥元数据，不包含可用于鉴权的密钥原文。
+          items:
+            $ref: "#/components/schemas/APIKey"
+    APIKey:
+      type: object
+      required:
+        - id
+        - user_id
+        - name
+        - key_prefix
+        - scopes
+        - expires_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 调用密钥 ID。
+        user_id:
+          type: string
+          format: uuid
+          description: 密钥所属用户 ID。
+        user_name:
+          type: string
+          description: 密钥所属用户的显示名称。
+        name:
+          type: string
+          description: 用户设置的密钥名称。
+        key_prefix:
+          type: string
+          description: 用于识别密钥的安全前缀，不可用于鉴权。
+          examples: [mk_abcd1234]
+        scopes:
+          type: array
+          description: 密钥具备的调用权限。
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: ["model:invoke", "mcp:invoke"]
+        expires_at:
+          type: string
+          format: date-time
+          description: 密钥过期时间。
+        last_used_at:
+          type: string
+          format: date-time
+          description: 最近一次成功使用时间；从未使用时不返回。
+        created_at:
+          type: string
+          format: date-time
+          description: 密钥创建时间。
+        revoked_at:
+          type: string
+          format: date-time
+          description: 密钥撤销时间；尚未撤销时不返回。
