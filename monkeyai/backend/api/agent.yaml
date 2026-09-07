@@ -1,8 +1,21 @@
 openapi: 3.1.0
 info:
-  title: MonkeyAI Agent API Key API
+  title: MonkeyAI Agent API
   version: 1.0.0
 paths:
+  /api/v1/config:
+    get:
+      summary: 获取当前 Agent 配置快照
+      parameters:
+        - in: header
+          name: If-None-Match
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 配置快照
+        "304":
+          description: 配置未变化
   /api/v1/api-keys:
     get:
       summary: 查询当前用户的调用密钥

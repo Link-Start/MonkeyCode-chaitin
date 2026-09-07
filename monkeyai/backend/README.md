@@ -56,7 +56,7 @@ backend/
 └── go.mod
 ```
 
-每个业务目录都是一个可独立分配给 AI 的工作单元，同时包含该业务的 Admin API、Agent API、业务逻辑、数据访问和测试。例如管理端创建模型与 Work Agent 获取模型都在 `model` 目录内实现，不需要同时修改两个集中式 API 目录。
+每个业务目录都是一个可独立分配给 AI 的工作单元，包含对应业务逻辑、HTTP handler、数据访问和测试。例如管理端创建模型与 Work Agent 获取模型都在 `model` 目录内实现。OpenAPI 契约按调用方集中维护为 `api/admin.yaml` 和 `api/agent.yaml`。
 
 HTTP 路由按调用方使用两个稳定前缀：管理后台使用 `/api/admin/v1`，工作 Agent 使用 `/api/v1`；模型协议代理为兼容现有客户端保留 `/v1`。业务包分别向对应路由注册 handler，共享业务服务但不共享请求 DTO；`/healthz` 和 `/readyz` 位于 API 前缀之外，供部署平台探测。
 
@@ -84,13 +84,12 @@ internal/model/
 
 ```text
 internal/<feature>/**
-api/<feature>/**
 migrations/<唯一版本>_<feature>_*.sql
 ```
 
-- API 契约按业务能力拆成片段，每个目录分别保存 `admin.yaml` 和 `agent.yaml`，避免多人修改单个 OpenAPI 文件。
+- API 契约按调用方集中维护在 `api/admin.yaml` 和 `api/agent.yaml`，由集成任务统一修改和校验。
 - SQL、sqlc 生成结果和测试留在对应业务目录，避免集中式 `repository`、`generated` 和 `test` 目录成为冲突热点。
-- `go.mod`、`go.sum`、`internal/app`、`internal/httpapi` 和公共 API Schema 是共享集成点，由单独的集成任务串行修改。
+- `go.mod`、`go.sum`、`internal/app`、`internal/httpapi`、`api/admin.yaml` 和 `api/agent.yaml` 是共享集成点，由单独的集成任务串行修改。
 - 新业务包自行暴露路由注册入口，`app` 显式组装；禁止通过 `init` 隐式注册来规避集成步骤。
 - 跨业务依赖的接口定义在使用方，接口保持最小；不得为了共享一个结构体就把业务类型移动到公共包。
 - 并行任务不修改其他业务目录。确实需要跨目录变更时，拆成独立前置任务或交给集成任务。
@@ -107,7 +106,7 @@ migrations/<唯一版本>_<feature>_*.sql
 
 ## 工程约定
 
-- API 契约按业务目录拆分，并在构建时合并校验；合并产物不得手工修改。
+- API 契约按调用方维护两份 OpenAPI 源文档，并由集成任务统一校验。
 - 路由使用 `chi/v5` 组织版本、调用方和中间件，处理器保持标准 `http.Handler` 接口。
 - HTTP DTO 不直接充当业务对象。
 - 测试与对应 Go 源码放在同一目录；暂不创建独立测试树。

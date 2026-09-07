@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: MonkeyAI Model Admin API
+  title: MonkeyAI Admin API
   version: 1.0.0
 paths:
   /api/admin/v1/models:
@@ -57,3 +57,22 @@ paths:
       responses:
         "200":
           description: 更新成功
+  /api/admin/v1/api-keys:
+    get:
+      summary: 查询调用密钥
+      responses:
+        "200":
+          description: 调用密钥元数据列表
+  /api/admin/v1/api-keys/{keyID}:
+    parameters:
+      - in: path
+        name: keyID
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      summary: 管理员撤销调用密钥
+      responses:
+        "204":
+          description: 撤销成功
