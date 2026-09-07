@@ -3,7 +3,7 @@ info:
   title: MonkeyAI Agent API Key API
   version: 1.0.0
 paths:
-  /api/agent/v1/api-keys:
+  /api/v1/api-keys:
     get:
       summary: 查询当前用户的调用密钥
       responses:
@@ -14,7 +14,7 @@ paths:
       responses:
         "201":
           description: 创建成功，原始密钥只返回一次
-  /api/agent/v1/api-keys/{keyID}:
+  /api/v1/api-keys/{keyID}:
     parameters:
       - in: path
         name: keyID
@@ -27,7 +27,7 @@ paths:
       responses:
         "204":
           description: 撤销成功
-  /api/agent/v1/api-keys/{keyID}/rotate:
+  /api/v1/api-keys/{keyID}/rotate:
     parameters:
       - in: path
         name: keyID

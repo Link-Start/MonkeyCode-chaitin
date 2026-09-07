@@ -58,7 +58,7 @@ backend/
 
 每个业务目录都是一个可独立分配给 AI 的工作单元，同时包含该业务的 Admin API、Agent API、业务逻辑、数据访问和测试。例如管理端创建模型与 Work Agent 获取模型都在 `model` 目录内实现，不需要同时修改两个集中式 API 目录。
 
-HTTP 路由按调用方使用两个稳定前缀：管理后台使用 `/api/admin/v1`，工作 Agent 使用 `/api/agent/v1`；模型协议代理为兼容现有客户端保留 `/v1`。业务包分别向对应路由注册 handler，共享业务服务但不共享请求 DTO；`/healthz` 和 `/readyz` 位于 API 前缀之外，供部署平台探测。
+HTTP 路由按调用方使用两个稳定前缀：管理后台使用 `/api/admin/v1`，工作 Agent 使用 `/api/v1`；模型协议代理为兼容现有客户端保留 `/v1`。业务包分别向对应路由注册 handler，共享业务服务但不共享请求 DTO；`/healthz` 和 `/readyz` 位于 API 前缀之外，供部署平台探测。
 
 ## 包内组织
 

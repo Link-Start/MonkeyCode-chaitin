@@ -3,7 +3,7 @@ info:
   title: MonkeyAI Agent Config API
   version: 1.0.0
 paths:
-  /api/agent/v1/config:
+  /api/v1/config:
     get:
       summary: 获取当前 Agent 配置快照
       parameters:
