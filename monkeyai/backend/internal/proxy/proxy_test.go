@@ -162,6 +162,39 @@ func TestProxyRejectsInvalidRequests(t *testing.T) {
 	}
 }
 
+func TestProxyRewritesModelAndRejectsProtocolMismatch(t *testing.T) {
+	var gotBody string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(upstream.Close)
+
+	resolver := ResolverFunc(func(context.Context, string, string) (Target, error) {
+		target := testTarget(upstream.URL + "/v1")
+		target.UpstreamModel = "gpt-5"
+		target.Protocol = "openai_responses"
+		return target, nil
+	})
+	p := NewProxy(resolver, discardLogger())
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"model-uuid","input":"hi"}`))
+	request.Header.Set("Authorization", "Bearer mk_secret")
+	p.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(gotBody, `"model":"gpt-5"`) {
+		t.Fatalf("status = %d, body = %q", recorder.Code, gotBody)
+	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"model-uuid"}`))
+	request.Header.Set("Authorization", "Bearer mk_secret")
+	p.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
 func TestProxyRegister(t *testing.T) {
 	proxy := NewProxy(nil, discardLogger())
 	router := chi.NewRouter()

@@ -56,7 +56,7 @@ export MONKEYAI_INITIAL_ADMIN_PASSWORD='至少十二个字符的初始密码'
 - 用户停用后，已有浏览器会话和 Agent token 即使尚未过期也无法继续使用。
 - OAuth access token、refresh token、授权码和浏览器会话只在数据库保存 SHA-256 摘要，不保存原文。
 
-## 6. Settings 与 Agent Config
+## 6. Settings、Agent Config 与调用密钥
 
 管理接口：
 
@@ -68,12 +68,15 @@ export MONKEYAI_INITIAL_ADMIN_PASSWORD='至少十二个字符的初始密码'
 
 Agent 接口：
 
-- `GET /api/agent/v1/config`：获取当前完整配置快照。
-- `GET /api/agent/v1/config/events`：订阅 SSE 实时更新。
+- `GET /api/v1/config`：获取当前用户的完整配置快照，支持 `ETag` 和 `If-None-Match`。
+- `GET /api/v1/api-keys`：列出当前用户的调用密钥元数据。
+- `POST /api/v1/api-keys`：创建调用密钥，原文只在响应中返回一次。
+- `POST /api/v1/api-keys/{keyID}/rotate`：轮换调用密钥。
+- `DELETE /api/v1/api-keys/{keyID}`：撤销调用密钥。
 
-SSE 建连后发送 `ready`，后续设置变更发送 `config` 事件，事件包含变更域和最新完整快照，每 20 秒发送心跳。在线多实例之间使用 PostgreSQL `LISTEN/NOTIFY` 广播，不持久化事件。系统不建立 `config_changes` 表，不支持 `Last-Event-ID` 补偿；Agent 断线重连后应先重新调用 Config 接口获取基线，再继续订阅。
+配置快照包含脱敏后的全局设置、当前用户可用的模型目录和模型代理地址。快照内容生成稳定 SHA-256 版本；Agent 在启动、登录和网络恢复时拉取，并可使用 ETag 定期检查变化。系统暂不提供 SSE 配置通知。
 
-下发给 Agent 的配置会移除所有管理密钥。
+OAuth access token 用于 Agent API；模型代理只接受具有 `model:invoke` 权限的调用密钥。后续 MCP 代理使用 `mcp:invoke`。调用密钥只保存 SHA-256 摘要，用户被停用、密钥过期或被撤销后立即失效。下发给 Agent 的配置不会包含任何上游供应商密钥。
 
 ## 7. 数据表
 
@@ -84,5 +87,6 @@ SSE 建连后发送 `ready`，后续设置变更发送 `config` 事件，事件�
 - `oauth_login_states`
 - `oauth_authorization_codes`
 - `oauth_tokens`
+- `api_keys`
 
 不新增 `oauth_clients` 和 `config_changes`。

@@ -3,15 +3,15 @@
 ## 工作单元
 
 - 每个 AI 默认只负责一个业务能力目录，例如 `internal/model` 或 `internal/skill`。
-- 业务代码、Admin API、Agent API、SQL、sqlc 生成结果和测试都保存在对应业务目录。
-- OpenAPI 源文件放在 `api/<feature>`，迁移使用 `migrate create -ext sql -dir migrations -seq <feature>_<action>` 生成默认六位序号，名称必须包含 feature。
+- 业务代码、SQL、sqlc 生成结果和测试都保存在对应业务目录。
+- OpenAPI 源文件按调用方统一维护在 `api/admin.yaml` 和 `api/agent.yaml`，不按业务模块拆分。迁移使用 `migrate create -ext sql -dir migrations -seq <feature>_<action>` 生成默认六位序号，名称必须包含 feature。
 
 ## 共享集成点
 
-- `go.mod`、`go.sum`、`internal/app`、`internal/httpapi`、公共 API Schema 和构建配置只能由当前集成任务修改。
+- `go.mod`、`go.sum`、`internal/app`、`internal/httpapi`、`api/admin.yaml`、`api/agent.yaml` 和构建配置只能由当前集成任务修改。
 - 业务任务如需新增依赖，只记录依赖及原因，由集成任务统一更新依赖文件。
 - 业务包暴露显式路由注册入口，由集成任务接入 `app`；禁止使用 `init` 或全局注册表自动发现模块。
-- 不得手工修改合并后的 OpenAPI、sqlc 或其他生成产物；源文件合并后由集成任务统一生成和校验。
+- 不得手工修改 sqlc 或其他生成产物；OpenAPI 源文件由集成任务统一更新和校验。
 
 ## 跨业务协作
 

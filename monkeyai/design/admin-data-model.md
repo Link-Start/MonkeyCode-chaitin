@@ -123,7 +123,7 @@ flowchart LR
 | 计数 | Token、调用次数等可能持续增长的计数使用 `bigint`。 |
 | 软删除 | 需要保留引用或历史的实体使用 `deleted_at`；事实表和流水表不软删除。 |
 | 候选值 | 本文列出的候选值是当前领域词汇，后续应通过约束或枚举固定。 |
-| 敏感信息 | 除登录密码仅保存不可逆哈希外，本阶段的密钥、Token 和认证 Header 均以明文保存。 |
+| 敏感信息 | 登录密码、登录 Token 和 Agent 调用密钥只保存不可逆哈希；上游供应商密钥和认证 Header 本阶段仍以明文保存。 |
 | 默认时间 | 文中的“当前时间”表示写入时的数据库当前时间。 |
 
 ## 5. 用户与分组
@@ -192,6 +192,23 @@ flowchart LR
 | `assigned_by_user_id` | `uuid` | 是 | 无 | 执行分配的管理员用户 ID。 |
 | `created_at` | `timestamptz` | 是 | 当前时间 | 分配时间。 |
 | `removed_at` | `timestamptz` | 否 | `NULL` | 移出该分组的时间。 |
+
+### 5.5 `api_keys`：调用密钥
+
+调用密钥由用户授权给工作 Agent，用于访问模型代理，后续也用于访问 MCP 代理。OAuth Token 只负责 Agent 登录、配置拉取和调用密钥管理，不直接作为资源调用凭据。
+
+| 字段 | PostgreSQL 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `id` | `uuid` | 是 | 自动生成 | 调用密钥 ID。 |
+| `user_id` | `uuid` | 是 | 无 | 密钥归属用户。 |
+| `name` | `text` | 是 | 无 | Agent 设备或用途名称。 |
+| `key_prefix` | `text` | 是 | 无 | 用于管理展示的非敏感前缀。 |
+| `key_hash` | `text` | 是 | 无 | 原始密钥的 SHA-256 摘要；原文只在创建和轮换时返回一次。 |
+| `scopes` | `text[]` | 是 | 无 | 权限范围：`model:invoke`、`mcp:invoke`。 |
+| `expires_at` | `timestamptz` | 是 | 无 | 到期时间。 |
+| `last_used_at` | `timestamptz` | 否 | `NULL` | 最近一次成功鉴权时间。 |
+| `created_at` | `timestamptz` | 是 | 当前时间 | 创建时间。 |
+| `revoked_at` | `timestamptz` | 否 | `NULL` | 撤销时间。 |
 
 ## 6. 系统设置
 

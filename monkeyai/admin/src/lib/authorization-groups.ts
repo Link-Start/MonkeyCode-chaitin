@@ -1,12 +1,6 @@
 import type { TFunction } from "i18next"
 
-export type AuthorizationGroup =
-  | "all-members"
-  | "administrators"
-  | "product-and-engineering"
-  | "product"
-  | "engineering"
-  | "operations"
+export type AuthorizationGroup = string
 
 export type AuthorizationGroupNode = {
   value: AuthorizationGroup
@@ -232,15 +226,17 @@ export function getAuthorizationGroupNames(
 
 export function getAuthorizationNames(
   authorization: AuthorizationSelection,
-  t: TFunction
+  t: TFunction,
+  groups = AUTHORIZATION_GROUPS,
+  members = AUTHORIZATION_MEMBERS
 ) {
   const groupNames = authorization.groupIds.map((groupId) => {
-    const group = AUTHORIZATION_GROUPS.find((item) => item.value === groupId)
+    const group = groups.find((item) => item.value === groupId)
 
-    return group ? t(group.labelKey) : groupId
+    return group ? t(group.labelKey, { defaultValue: group.labelKey }) : groupId
   })
   const memberNames = authorization.memberIds.map((memberId) => {
-    const member = AUTHORIZATION_MEMBERS.find((item) => item.id === memberId)
+    const member = members.find((item) => item.id === memberId)
 
     return member?.name ?? memberId
   })

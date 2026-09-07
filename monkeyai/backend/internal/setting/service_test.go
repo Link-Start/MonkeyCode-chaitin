@@ -45,7 +45,7 @@ func TestAgentConfigRedactsSecrets(t *testing.T) {
 			Key: "email", Value: json.RawMessage(`{"smtp_host":"smtp.example.com","smtp_password":"secret"}`), UpdatedAt: time.Now(),
 		},
 	}}
-	service := NewService(store, NewBroker())
+	service := NewService(store)
 	config, err := service.AgentConfig(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestPutPreservesRedactedSecret(t *testing.T) {
 	store := &memoryStore{records: map[string]Record{
 		"authentication": {Key: "authentication", Value: json.RawMessage(`{"oauth_connections":[{"id":"github","provider":"github","name":"GitHub","client_id":"client","client_secret":"secret","enabled":true}]}`)},
 	}}
-	service := NewService(store, NewBroker())
+	service := NewService(store)
 	_, err := service.Put(t.Context(), "authentication", json.RawMessage(`{"oauth_connections":[{"id":"github","provider":"github","name":"GitHub","client_id":"client","enabled":true}]}`), 1, "user")
 	if err != nil {
 		t.Fatal(err)

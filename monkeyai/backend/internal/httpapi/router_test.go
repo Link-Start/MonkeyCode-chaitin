@@ -89,7 +89,7 @@ func TestAPIRoutes(t *testing.T) {
 		want string
 	}{
 		{path: "/api/admin/v1/status", want: "admin"},
-		{path: "/api/agent/v1/status", want: "agent"},
+		{path: "/api/v1/status", want: "agent"},
 		{path: "/api/auth/v1/status", want: "auth"},
 	}
 	for _, test := range tests {

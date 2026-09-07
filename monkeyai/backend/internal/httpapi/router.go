@@ -35,7 +35,7 @@ func New(logger *slog.Logger, database Pinger, admin, agent, auth http.Handler) 
 	})
 
 	router.Mount("/api/admin/v1", admin)
-	router.Mount("/api/agent/v1", agent)
+	router.Mount("/api/v1", agent)
 	router.Mount("/api/auth/v1", auth)
 
 	return router
